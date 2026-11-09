@@ -118,10 +118,14 @@ extension Engine {
         displayChange.stableDisplays = connectedDisplays()
     }
 
-    /// Every connected display, Guest Displays included: one connecting is a change too.
-    /// Desktops are left out, since adding one in Mission Control sends no reconfiguration event.
+    /// Every connected display and where it sits, Guest Displays included: one connecting, moving or changing
+    /// resolution is a change too. Desktops are left out, since adding one in Mission Control sends no
+    /// reconfiguration event.
     private func connectedDisplays() -> Set<String> {
-        Set(windowSystem.readDisplays().map(\.id))
+        Set(windowSystem.readDisplays().map { display in
+            let area = display.visibleFrame
+            return "\(display.id) \(area.x),\(area.y) \(area.width)x\(area.height)"
+        })
     }
 
     /// Every normal window's position and known display, keyed by window ID. Guest Displays are left out.

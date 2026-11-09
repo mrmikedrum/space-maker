@@ -113,7 +113,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
 65. As the user, I want the Doctor to run at launch and on demand (menu bar, MCP, command line), so that I always know whether things work.
 66. As the user, I want the Doctor to test a real window move between desktops, so that I find out right away if macOS has broken the move.
 67. As the user, I want the Doctor to write a self-contained markdown report, so that I can hand it to an agent to fix.
-68. As the user, I want the menu bar icon to turn red when the Doctor finds a problem, so that I notice.
+68. As the user, I want the menu bar icon to switch to a warning symbol when the Doctor finds a problem, so that I notice.
 69. As the user, I want features that depend on a failed check to switch off while everything else keeps working, so that one broken part doesn't take down the whole app.
 70. As the user, I want Space Maker never to ask me to disable SIP, so that my Mac stays secure.
 
@@ -183,7 +183,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
   - **Report:** markdown in `~/Library/Logs/SpaceMaker/`, written so an agent can act on it.
   - **Failures:** a failed check disables only the features that depend on it.
 - **Menu bar:**
-  - **Icon:** plain, a dot and count for Drift, or red for a Doctor failure (red wins).
+  - **Icon:** plain, a dot and count for Drift, or a warning symbol for a Doctor failure (the warning wins). Always an untinted template image, so it follows the menu bar's light or dark appearance.
   - **Menu:** Save all; Restore all; drifted windows with Restore, Save and Ignore; Soft Drift with hints; Pin/Unpin frontmost; Remember this display (when a Guest Display is connected); rename Space; pause/resume; Doctor; Open Layout file.
   - **Not included:** notifications and global shortcuts.
 

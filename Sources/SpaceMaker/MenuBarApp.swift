@@ -60,9 +60,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Space Maker")
-        image?.isTemplate = true
-        item.button?.image = image
+        item.button?.image = Self.icon(problem: false)
         item.button?.imagePosition = .imageLeading
 
         let menu = NSMenu()
@@ -304,24 +302,31 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showIcon(driftCount: engine.status().drift.count)
     }
 
-    /// Red when the Doctor failed, otherwise a dot and count for Drift, otherwise plain. Red wins.
-    /// Soft Drift never lights the dot.
+    /// A warning symbol when the Doctor failed, otherwise a dot and count for Drift, otherwise plain.
+    /// The Doctor's warning wins. Soft Drift never lights the dot. Icons are always template images, never
+    /// tinted, so they follow the menu bar's light or dark appearance like every other menu bar icon.
     private func showIcon(driftCount: Int) {
         guard let button = statusItem?.button else { return }
+        button.image = Self.icon(problem: doctorFailed)
         if doctorFailed {
-            button.contentTintColor = .systemRed
             button.title = ""
             button.toolTip = "Space Maker: the Doctor found a problem"
         } else if driftCount > 0 {
-            button.contentTintColor = nil
             button.title = "●\(driftCount)"
             button.toolTip = "Space Maker: \(driftCount) window\(driftCount == 1 ? "" : "s") drifted"
         } else {
-            button.contentTintColor = nil
             button.title = ""
             button.toolTip = "Space Maker"
         }
         if engine.isPaused { button.toolTip = (button.toolTip ?? "Space Maker") + " (automatic placement and restore paused)" }
+    }
+
+    private static func icon(problem: Bool) -> NSImage? {
+        let name = problem ? "exclamationmark.triangle" : "rectangle.3.group"
+        let description = problem ? "Space Maker: the Doctor found a problem" : "Space Maker"
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: description)
+        image?.isTemplate = true
+        return image
     }
 
     // MARK: - Login item

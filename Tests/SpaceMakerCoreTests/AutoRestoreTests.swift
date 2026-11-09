@@ -157,6 +157,23 @@ struct AutoRestoreTests {
         #expect(world.window(503)?.frame == before)
     }
 
+    @Test func aWindowShovedByAResolutionChangeGoesBackEvenIfSpaceMakerLooksAtTheWorldBeforeTheEventArrives() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)  // no positions were saved: the windows had none
+        let before = WindowFrame(x: 1700, y: 100, width: 800, height: 600)
+        world.place(503, at: before)
+        _ = engine.status()
+
+        // The monitor's resolution changes (same displays, new geometry) and macOS shoves Safari before saying so.
+        world.displays[1].visibleFrame = WindowFrame(x: 1512, y: 25, width: 1920, height: 1055)
+        world.place(503, at: WindowFrame(x: 1512, y: 25, width: 800, height: 600))
+        _ = engine.status()
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+
+        #expect(world.window(503)?.frame == before)
+    }
+
     @Test func afterAChangeThatNeverSettledRestoreAllMakesTheUsersLaterMovesTheOnesAChangePutsBack() throws {
         let engine = engine()
         try savedLaptopThenDocked(engine)  // no positions were saved: the windows had none
