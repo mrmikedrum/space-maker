@@ -112,6 +112,20 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        let spaces = status.displaySetup.flatMap(\.desktops).compactMap(\.space)
+        if !spaces.isEmpty {
+            menu.addItem(.separator())
+            let rename = NSMenuItem(title: "Rename Space", action: nil, keyEquivalent: "")
+            let names = NSMenu()
+            for space in spaces {
+                let item = menuItem("\(space)…", #selector(renameSpaceClicked))
+                item.representedObject = space
+                names.addItem(item)
+            }
+            rename.submenu = names
+            menu.addItem(rename)
+        }
+
         menu.addItem(.separator())
         menu.addItem(menuItem("Run Doctor", #selector(doctorClicked)))
         menu.addItem(menuItem("Open Layout File", #selector(openLayoutClicked)))
@@ -174,6 +188,23 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func rememberDisplayClicked(_ sender: NSMenuItem) {
         perform("remember_display", ["display": sender.representedObject as? String ?? ""], failureTitle: "Space Maker couldn't remember that display")
+    }
+
+    /// Asks for the Space's new name in a simple prompt, then renames it as `rename_space` would.
+    @objc private func renameSpaceClicked(_ sender: NSMenuItem) {
+        guard let space = sender.representedObject as? String else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename “\(space)”"
+        alert.informativeText = "Its windows stay assigned to it."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = space
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        perform("rename_space", ["space": space, "name": field.stringValue], failureTitle: "Space Maker couldn't rename “\(space)”")
     }
 
     @objc private func saveAllClicked() {
