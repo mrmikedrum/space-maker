@@ -10,6 +10,8 @@ extension Engine {
         var spaces: [String]
         /// The names of the fullscreen windows sharing its gap between Spaces, in order.
         var gap: [String]
+        /// Where it comes among the display's fullscreen windows in the Arrangement, counting from 0.
+        var rank: Int
 
         /// Such as "after “Work”", or "before “Tasks”" for one that comes first.
         var description: String {
@@ -18,8 +20,9 @@ extension Engine {
             return "on \(display.name)"
         }
 
-        /// The regular desktop just before the place, where the window goes before re-entering fullscreen.
-        /// For a place before the first Space that's the first desktop, so it lands one place late.
+        /// The regular desktop just before the place, where the window goes before re-entering fullscreen, which puts
+        /// it on the right display. macOS appends a new fullscreen desktop at the end of the display, so the window
+        /// lands after every Space whatever its place; only its order among the fullscreen windows can be kept.
         var desktopBefore: UInt64? {
             let regular = display.desktops.filter { $0.kind == .regular }
             return spacesBefore == 0 ? regular.first?.id : (regular.indices.contains(spacesBefore - 1) ? regular[spacesBefore - 1].id : nil)
@@ -33,21 +36,77 @@ extension Engine {
         var result: [String: FullscreenPlace] = [:]
         for arrangement in setup.arrangement {
             guard let display = known.first(where: { $0.id == arrangement.display }) else { continue }
-            for item in arrangement.fullscreenWindows {
-                let gap = arrangement.fullscreenWindows.filter { $0.spacesBefore == item.spacesBefore }.map(\.name)
+            let ordered = arrangement.fullscreenWindows.enumerated()
+                .sorted { ($0.element.spacesBefore, $0.offset) < ($1.element.spacesBefore, $1.offset) }.map(\.element)
+            for (rank, item) in ordered.enumerated() {
+                let gap = ordered.filter { $0.spacesBefore == item.spacesBefore }.map(\.name)
                 result[item.name] = FullscreenPlace(
-                    name: item.name, display: display, spacesBefore: item.spacesBefore, spaces: arrangement.spaces, gap: gap
+                    name: item.name, display: display, spacesBefore: item.spacesBefore, spaces: arrangement.spaces, gap: gap, rank: rank
                 )
             }
         }
         return result
     }
 
+    /// One step of putting fullscreen windows back: `window` goes (back) into fullscreen at `place`.
+    struct FullscreenStep {
+        var window: WindowSystemWindow
+        var place: FullscreenPlace
+        /// Whether it was already fullscreen in place and is only cycled to come after a window put back before it.
+        var keepsOrder: Bool
+    }
+
+    /// The steps that put `restoring` (windows with a fullscreen Assignment that are out of fullscreen or on the
+    /// wrong display) back in fullscreen with each display's fullscreen windows in their Arrangement order.
+    ///
+    /// macOS appends every new fullscreen desktop at the end of its display. So on each display with a window to put
+    /// back, the longest start of the display's fullscreen order that's already fullscreen there in that order stays;
+    /// every later fullscreen window of the display, in order, goes out of and back into fullscreen (or just in, for
+    /// one being put back), each landing after the one before. A display with nothing to put back is never touched,
+    /// even if the user dragged its fullscreen windows out of order (Soft Drift).
+    /// `inPlace` is every window already fullscreen on its place's display (see `fullscreenWindowsInPlace`).
+    func fullscreenSteps(
+        restoring: [(window: WindowSystemWindow, place: FullscreenPlace)], inPlace: [(window: WindowSystemWindow, place: FullscreenPlace)]
+    ) -> [FullscreenStep] {
+        var steps: [FullscreenStep] = []
+        var displays: [String] = []
+        for item in restoring where !displays.contains(item.place.display.id) { displays.append(item.place.display.id) }
+        for displayID in displays {
+            let back = restoring.filter { $0.place.display.id == displayID }
+            let kept = inPlace.filter { $0.place.display.id == displayID }
+            guard let display = back.first?.place.display else { continue }
+            let wanted = (back.map { ($0, false) } + kept.map { ($0, true) }).sorted { $0.0.place.rank < $1.0.place.rank }
+            // The start of the order that's already fullscreen here, in that order, stays.
+            var stay = 0
+            var lastIndex = -1
+            for (item, isInPlace) in wanted {
+                guard isInPlace, let index = display.desktops.firstIndex(where: { $0.id == item.window.desktopID }), index > lastIndex
+                else { break }
+                lastIndex = index
+                stay += 1
+            }
+            steps += wanted.dropFirst(stay).map { FullscreenStep(window: $0.0.window, place: $0.0.place, keepsOrder: $0.1) }
+        }
+        return steps
+    }
+
+    /// The windows, not Ignored, whose Assignment is a fullscreen place and that are fullscreen on its display.
+    func fullscreenWindowsInPlace(
+        _ windows: [WindowSystemWindow], matches: [UInt32: Int], assignments: [Assignment], places: [String: FullscreenPlace]
+    ) -> [(window: WindowSystemWindow, place: FullscreenPlace)] {
+        windows.compactMap { window in
+            guard !isIgnored(window), window.isFullscreen, let index = matches[window.id], assignments[index].window.isFullscreen,
+                  let place = places[assignments[index].space], isOn(window, place.display)
+            else { return nil }
+            return (window, place)
+        }
+    }
+
     /// Restores one window whose Assignment is a fullscreen place. Returns nil if it was already in place,
     /// otherwise whether every step worked. A window fullscreen on the right display is left alone, even in the
-    /// wrong order: only the user can fix that (Soft Drift).
-    func restoreFullscreen(_ window: WindowSystemWindow, to place: FullscreenPlace) -> Bool? {
-        if window.isFullscreen, isOn(window, place.display) { return nil }
+    /// wrong order, unless `cycling` it (out of fullscreen and back in) to follow a window put back before it.
+    func restoreFullscreen(_ window: WindowSystemWindow, to place: FullscreenPlace, cycling: Bool = false) -> Bool? {
+        if window.isFullscreen, isOn(window, place.display), !cycling { return nil }
         guard let target = place.desktopBefore else { return false }
         if window.isFullscreen, !windowSystem.setFullscreen(window.id, false) { return false }
         let desktop = windowSystem.readWindows().first { $0.id == window.id }?.desktopID

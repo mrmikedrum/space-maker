@@ -169,6 +169,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
 - **Restore semantics:**
   - **Normal windows:** move to the resolved desktop, then apply the saved frame if there is one.
   - **Fullscreen windows:** leave them alone if they are fullscreen on the right display. Otherwise exit fullscreen, move the window to the desktop just before its place in the Arrangement, and re-enter fullscreen.
+    macOS appends a new fullscreen desktop at the end of the display, so on a display where a window goes back into fullscreen, the later fullscreen windows of that display (after the longest start of its fullscreen order already right on screen) are cycled out and back in, keeping their order. A place before or between Spaces stays Soft Drift.
   - **Soft Drift:** anything that can't be achieved is recorded as Soft Drift and not retried until the world changes. Examples: desktop order, a fullscreen window that should come first, missing desktops.
 - **Position Drift:** a window on its Space but away from its saved frame for the current Display Setup counts as Drift. A window with no saved frame for that Display Setup never drifts by position.
 - **Placement:** a window-appeared event Restores just that window, unless automatic behaviour is paused.
@@ -196,7 +197,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
   - redock restoring desktops in a shuffled order or with a missing desktop;
   - desktops staying unsettled for several reads after a reconfiguration;
   - a Chrome relaunch putting every window on the current desktop and generating fresh handles;
-  - a fullscreen window entering fullscreen just after the desktop it was on;
+  - a window entering fullscreen getting a new fullscreen desktop at the end of its display;
   - Guest Displays appearing and disappearing;
   - actions that fail (to exercise Soft Drift and Doctor-disabled features).
 - **Time:** settle and debounce behaviour is tested with the fake clock; tests never sleep.

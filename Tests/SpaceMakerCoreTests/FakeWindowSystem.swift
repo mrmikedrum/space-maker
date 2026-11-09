@@ -109,8 +109,9 @@ final class FakeWindowSystem: WindowSystem {
     var unfullscreenableWindows: Set<UInt32> = []
     private var nextFullscreenDesktop: UInt64 = 9001
 
-    /// Like macOS: entering fullscreen makes a fullscreen desktop just after the desktop the window was on;
-    /// leaving it puts the window on the regular desktop just before and removes the fullscreen desktop.
+    /// Like macOS (seen on 15.4.1): entering fullscreen appends a fullscreen desktop at the end of the window's
+    /// display, whichever desktop the window was on or is showing; leaving it puts the window on the regular desktop
+    /// just before and removes the fullscreen desktop.
     func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool {
         guard !unfullscreenableWindows.contains(windowID),
               let index = windows.firstIndex(where: { $0.id == windowID }),
@@ -124,7 +125,7 @@ final class FakeWindowSystem: WindowSystem {
         if isFullscreen {
             let id = nextFullscreenDesktop
             nextFullscreenDesktop += 1
-            displays[display].desktops.insert(WindowSystemDesktop(id: id, kind: .fullscreen, isCurrent: false), at: slot + 1)
+            displays[display].desktops.append(WindowSystemDesktop(id: id, kind: .fullscreen, isCurrent: false))
             windows[index].desktopID = id
         } else {
             let desktops = displays[display].desktops

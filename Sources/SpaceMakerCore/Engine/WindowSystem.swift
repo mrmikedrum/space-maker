@@ -14,8 +14,8 @@ public protocol WindowSystem: AnyObject {
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool
 
     /// Takes a window into or out of fullscreen, returning once macOS has finished. Returns false if it didn't happen.
-    /// Entering fullscreen makes a fullscreen desktop just after the desktop the window was on; leaving it puts the
-    /// window back on a regular desktop of the same display.
+    /// Entering fullscreen appends a fullscreen desktop at the end of the window's display, whichever desktop the
+    /// window was on or is showing; leaving it puts the window back on a regular desktop of the same display.
     func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool
 
     /// Sets a window's position and size, in screen points. Returns false if macOS didn't apply it.

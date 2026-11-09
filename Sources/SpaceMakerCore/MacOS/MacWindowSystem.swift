@@ -257,12 +257,6 @@ public final class MacWindowSystem: WindowSystem {
             return kind == (isFullscreen ? .fullscreen : .regular)
         }
         if settled() { return true }
-        if isFullscreen {
-            // macOS puts a new fullscreen desktop after the desktop being shown, not the window's own,
-            // so bring the window (and its desktop) to the front first.
-            focusWindow(windowID)
-            RunLoop.current.run(until: Date().addingTimeInterval(0.6))
-        }
         guard AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, (isFullscreen ? kCFBooleanTrue : kCFBooleanFalse)) == .success
         else { return false }
         let deadline = Date().addingTimeInterval(Self.fullscreenSettleTimeout)

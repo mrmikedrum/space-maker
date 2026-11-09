@@ -27,19 +27,29 @@ extension Engine {
         reloadLayoutIfChanged()
         guard layoutProblem == nil, movesDisabledReason == nil else { return }
         let displays = windowSystem.readDisplays()
-        guard let desktops = resolvedSpaces(displays), !isIgnored(window),
-              let index = Self.match(windows, to: layout.assignments)[windowID]
-        else { return }
+        let matches = Self.match(windows, to: layout.assignments)
+        guard let desktops = resolvedSpaces(displays), !isIgnored(window), let index = matches[windowID] else { return }
         let assignment = layout.assignments[index]
 
         // A fullscreen Assignment goes back to its place in the Arrangement, whether the window came back
         // fullscreen (perhaps on the wrong display) or as a normal window.
         if assignment.window.isFullscreen {
-            guard let place = fullscreenPlaces(displays)[assignment.space],
+            let places = fullscreenPlaces(displays)
+            guard let place = places[assignment.space],
                   !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID })
             else { return }
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
-            if movingWindows({ restoreFullscreen(window, to: place) }) == false { failedMoves.insert(windowID) } else { failedMoves.remove(windowID) }
+            // Like Restore, later fullscreen windows of the display are cycled so the order among them holds.
+            let inPlace = fullscreenWindowsInPlace(windows, matches: matches, assignments: layout.assignments, places: places)
+            movingWindows {
+                for step in fullscreenSteps(restoring: [(window, place)], inPlace: inPlace) {
+                    if restoreFullscreen(step.window, to: step.place, cycling: step.keepsOrder) == false {
+                        failedMoves.insert(step.window.id)
+                    } else {
+                        failedMoves.remove(step.window.id)
+                    }
+                }
+            }
             rememberWorldForSoftDrift()
             return
         }

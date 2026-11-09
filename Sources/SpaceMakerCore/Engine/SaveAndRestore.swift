@@ -299,34 +299,45 @@ extension Engine {
                 targets = [window]
             }
 
+            let label = { (window: WindowSystemWindow) in "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)" }
             return movingWindows { () -> CommandReply in
                 var moved: [String] = []
                 var problems: [String] = []
                 var notRetried: [String] = []
+                // Fullscreen windows first, display by display, so each display's come out in Arrangement order.
+                var restoring: [(window: WindowSystemWindow, place: FullscreenPlace)] = []
+                for window in targets {
+                    guard let index = matches[window.id], assignments[index].window.isFullscreen else { continue }
+                    let space = assignments[index].space
+                    guard let place = places[space] else {
+                        problems.append("\(label(window)): “\(space)” has no place in this Display Setup's Arrangement.")
+                        continue
+                    }
+                    if window.isFullscreen, place.display.desktops.contains(where: { $0.id == window.desktopID }) { continue }
+                    if handle == nil, failedMoves.contains(window.id) {
+                        notRetried.append(label(window))
+                        continue
+                    }
+                    restoring.append((window, place))
+                }
+                let inPlace = fullscreenWindowsInPlace(windows, matches: matches, assignments: assignments, places: places)
+                for step in fullscreenSteps(restoring: restoring, inPlace: inPlace) {
+                    switch restoreFullscreen(step.window, to: step.place, cycling: step.keepsOrder) {
+                    case nil: continue
+                    case true?:
+                        moved.append("\(label(step.window)) → fullscreen \(step.place.description)\(step.keepsOrder ? ", to keep the order" : "")")
+                        failedMoves.remove(step.window.id)
+                    case false?:
+                        problems.append("\(label(step.window)): macOS didn't put it back in fullscreen \(step.place.description).")
+                        failedMoves.insert(step.window.id)
+                    }
+                }
+
                 for window in targets {
                     guard let index = matches[window.id] else { continue }  // no Assignment: never moved
                     let space = assignments[index].space
-                    let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
-                    if assignments[index].window.isFullscreen {
-                        guard let place = places[space] else {
-                            problems.append("\(label): “\(space)” has no place in this Display Setup's Arrangement.")
-                            continue
-                        }
-                        if handle == nil, failedMoves.contains(window.id), !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID }) {
-                            notRetried.append(label)
-                            continue
-                        }
-                        switch restoreFullscreen(window, to: place) {
-                        case nil: continue
-                        case true?:
-                            moved.append("\(label) → fullscreen \(place.description)")
-                            failedMoves.remove(window.id)
-                        case false?:
-                            problems.append("\(label): macOS didn't put it back in fullscreen \(place.description).")
-                            failedMoves.insert(window.id)
-                        }
-                        continue
-                    }
+                    if assignments[index].window.isFullscreen { continue }  // done above
+                    let label = label(window)
                     guard !window.isFullscreen else { continue }
                     guard let target = desktops[space] else {
                         problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")

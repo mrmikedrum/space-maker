@@ -55,7 +55,7 @@ struct FullscreenTests {
         #expect(engine.status().softDrift.isEmpty)
     }
 
-    @Test func takenOutOfFullscreenAndPutBackOneDesktopLateWhenItBelongsFirstIsSoftDriftAndNotRetried() throws {
+    @Test func takenOutOfFullscreenWhenItBelongsFirstComesBackAfterTheSpacesAsSoftDriftAndIsNotRetried() throws {
         laptopAlone()
         let engine = engine()
         try engine.run("save")
@@ -63,9 +63,10 @@ struct FullscreenTests {
 
         try engine.run("restore")
 
-        // macOS can only put it after a desktop, so it ends up after TickTick rather than before it.
+        // macOS appends new fullscreen desktops at the end of the display, so Game main can't get back before
+        // TickTick; Work main is cycled so the fullscreen windows keep their saved order.
         #expect(world.window(601)?.isFullscreen == true)
-        #expect(world.order(of: "built-in") == ["11", "fullscreen 601", "12", "13", "fullscreen 604"])
+        #expect(world.order(of: "built-in") == ["11", "12", "13", "fullscreen 601", "fullscreen 604"])
         let status = engine.status()
         #expect(status.drift.isEmpty)
         let soft = try #require(status.softDrift.first { $0.title == "Twitch" })
@@ -76,7 +77,72 @@ struct FullscreenTests {
         try engine.run("restore")
         try engine.run("restore")
         #expect(world.fullscreenChanges == changes)
-        #expect(world.order(of: "built-in") == ["11", "fullscreen 601", "12", "13", "fullscreen 604"])
+        #expect(world.order(of: "built-in") == ["11", "12", "13", "fullscreen 601", "fullscreen 604"])
+    }
+
+    /// Game main fullscreen, TickTick, Work main fullscreen.
+    func gameTickTickWork() {
+        world.displays = [.builtIn(desktops: [.fullscreen(901), .regular(11, current: true), .fullscreen(902)])]
+        world.windows = [
+            .chrome(601, profile: .known("Game"), title: "Twitch", desktop: 901, fullscreen: true, name: "Twitch"),
+            .app(501, "com.TickTick.task.mac", "TickTick", title: "Today", desktop: 11),
+            .chrome(604, profile: .known("Work"), title: "Calendar", desktop: 902, fullscreen: true, name: "Calendar"),
+        ]
+    }
+
+    @Test func restoringAFullscreenWindowCyclesTheLaterFullscreenWindowsOnItsDisplaySoTheirOrderMatchesTheArrangement() throws {
+        gameTickTickWork()
+        let engine = engine()
+        try engine.run("save")
+        _ = world.setFullscreen(601, false)  // Game main leaves fullscreen and lands on TickTick's desktop
+        #expect(world.order(of: "built-in") == ["11", "fullscreen 604"])
+
+        try engine.run("restore")
+
+        #expect(world.order(of: "built-in") == ["11", "fullscreen 601", "fullscreen 604"])
+        #expect(world.fullscreenChanges == [601: 2, 604: 2])  // Game main out (by hand) and back in; Work main out and in
+        #expect(engine.status().drift.isEmpty)
+        #expect(engine.status().softDrift.map(\.title) == ["Twitch"])  // it belongs before TickTick
+        #expect(engine.status().softDrift.first?.problem.contains("before “TickTick”") == true)
+
+        try engine.run("restore")  // nothing changed: nothing is cycled again
+        #expect(world.fullscreenChanges == [601: 2, 604: 2])
+        #expect(world.order(of: "built-in") == ["11", "fullscreen 601", "fullscreen 604"])
+    }
+
+    @Test func placingAFullscreenWindowCyclesTheLaterFullscreenWindowsOnItsDisplayToo() throws {
+        gameTickTickWork()
+        let engine = engine()
+        try engine.run("save")
+
+        // Game main closes, taking its fullscreen desktop with it, and comes back as a normal window.
+        world.closeWindow(601)
+        world.displays[0].desktops.removeAll { $0.id == 901 }
+        world.openWindow(.chrome(1601, profile: .known("Game"), title: "Twitch", desktop: 11, name: "Twitch"))
+
+        #expect(world.order(of: "built-in") == ["11", "fullscreen 1601", "fullscreen 604"])
+        #expect(world.fullscreenChanges == [1601: 1, 604: 2])
+        #expect(engine.status().drift.isEmpty)
+    }
+
+    @Test func twoFullscreenWindowsRestoredOnOneDisplayComeOutInArrangementOrder() throws {
+        world.displays = [.builtIn(desktops: [.regular(11, current: true), .fullscreen(901), .fullscreen(902)])]
+        world.windows = [  // listed Work main first, so restoring in list order would put it before Game main
+            .chrome(604, profile: .known("Work"), title: "Calendar", desktop: 902, fullscreen: true, name: "Calendar"),
+            .app(501, "com.TickTick.task.mac", "TickTick", title: "Today", desktop: 11),
+            .chrome(601, profile: .known("Game"), title: "Twitch", desktop: 901, fullscreen: true, name: "Twitch"),
+        ]
+        let engine = engine()
+        try engine.run("save")
+        _ = world.setFullscreen(604, false)
+        _ = world.setFullscreen(601, false)
+
+        try engine.run("restore")
+
+        #expect(world.order(of: "built-in") == ["11", "fullscreen 601", "fullscreen 604"])
+        #expect(world.fullscreenChanges == [601: 2, 604: 2])  // each out and back in once
+        #expect(engine.status().drift.isEmpty)
+        #expect(engine.status().softDrift.isEmpty)
     }
 
     @Test func aFullscreenWindowDraggedOutOfOrderOnItsDisplayIsSoftDriftAndLeftAlone() throws {
