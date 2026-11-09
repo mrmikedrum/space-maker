@@ -171,23 +171,23 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func restoreWindowClicked(_ sender: NSMenuItem) {
-        perform("restore", ["window": sender.representedObject as? String ?? ""], failureTitle: "Space Maker couldn't Restore that window")
+        perform(.restoreWindow(handle: sender.representedObject as? String ?? ""), failureTitle: "Space Maker couldn't Restore that window")
     }
 
     @objc private func saveWindowClicked(_ sender: NSMenuItem) {
-        perform("save", ["window": sender.representedObject as? String ?? ""], failureTitle: "Space Maker couldn't Save that window")
+        perform(.saveWindow(handle: sender.representedObject as? String ?? ""), failureTitle: "Space Maker couldn't Save that window")
     }
 
     @objc private func ignoreWindowClicked(_ sender: NSMenuItem) {
-        perform("ignore", ["window": sender.representedObject as? String ?? ""], failureTitle: "Space Maker couldn't Ignore that window")
+        perform(.ignoreWindow(handle: sender.representedObject as? String ?? ""), failureTitle: "Space Maker couldn't Ignore that window")
     }
 
     @objc private func ignoreAppClicked(_ sender: NSMenuItem) {
-        perform("ignore", ["window": sender.representedObject as? String ?? "", "app": "true"], failureTitle: "Space Maker couldn't Ignore that app")
+        perform(.ignoreApp(ofWindow: sender.representedObject as? String ?? ""), failureTitle: "Space Maker couldn't Ignore that app")
     }
 
     @objc private func rememberDisplayClicked(_ sender: NSMenuItem) {
-        perform("remember_display", ["display": sender.representedObject as? String ?? ""], failureTitle: "Space Maker couldn't remember that display")
+        perform(.rememberDisplay(id: sender.representedObject as? String ?? ""), failureTitle: "Space Maker couldn't remember that display")
     }
 
     /// Asks for the Space's new name in a simple prompt, then renames it as `rename_space` would.
@@ -204,20 +204,20 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.window.initialFirstResponder = field
         NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        perform("rename_space", ["space": space, "name": field.stringValue], failureTitle: "Space Maker couldn't rename “\(space)”")
+        perform(.renameSpace(space, to: field.stringValue), failureTitle: "Space Maker couldn't rename “\(space)”")
     }
 
     @objc private func saveAllClicked() {
-        perform("save", failureTitle: "Space Maker couldn't Save")
+        perform(.saveAll, failureTitle: "Space Maker couldn't Save")
     }
 
     @objc private func restoreAllClicked() {
-        perform("restore", failureTitle: "Space Maker couldn't Restore everything")
+        perform(.restoreAll, failureTitle: "Space Maker couldn't Restore everything")
     }
 
     /// Runs a command through the engine, as MCP would, and only speaks up when something went wrong.
-    private func perform(_ command: String, _ arguments: [String: String] = [:], failureTitle: String) {
-        let reply = engine.perform(CommandRequest(command: command, arguments: arguments))
+    private func perform(_ action: MenuAction, failureTitle: String) {
+        let reply = engine.perform(action)
         refreshIcon()
         guard reply.isError || reply.text.contains("Couldn't") else { return }
         let alert = NSAlert()
@@ -228,7 +228,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func pauseClicked() {
-        perform(engine.isPaused ? "resume" : "pause", failureTitle: "Couldn't pause or resume")
+        perform(.togglePause, failureTitle: "Couldn't pause or resume")
     }
 
     @objc private func pinFrontmostClicked() {
