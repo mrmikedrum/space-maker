@@ -11,6 +11,8 @@ public struct Status: Codable, Equatable, Sendable {
     public var drift: [DriftStatus]
     /// Drift Space Maker can't fix itself; only the user can, by rearranging and then Saving.
     public var softDrift: [SoftDriftStatus]
+    /// Whether automatic behaviour (Placement, automatic Restore) is paused.
+    public var isPaused: Bool
 }
 
 public struct DisplayStatus: Codable, Equatable, Sendable {

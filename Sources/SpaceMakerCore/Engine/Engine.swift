@@ -31,6 +31,12 @@ public final class Engine {
     /// The world as it was when Soft Drift was last recorded.
     var softDriftWorld: WorldSnapshot?
 
+    /// Whether automatic behaviour is paused: Placement now, automatic Restore on display change later.
+    /// Commands the user runs still work. Not persisted; Space Maker starts unpaused.
+    public internal(set) var isPaused = false
+    /// Windows Placement has already had its one chance at, so it never fights the user. Never persisted.
+    var appearedWindows: Set<UInt32> = []
+
     /// Why moving windows is disabled, if the Doctor says it doesn't work.
     var movesDisabledReason: String?
 
@@ -47,15 +53,22 @@ public final class Engine {
         windowSystem.onEvent = { [weak self] event in self?.handle(event) }
     }
 
+    /// Called after the engine has reacted to an event from the port, so the menu bar can refresh.
+    public var onChange: (@MainActor () -> Void)?
+
     /// Reacts to an event from the `WindowSystem` port.
     private func handle(_ event: WindowSystemEvent) {
+        defer { onChange?() }
         switch event {
         case .activeSpaceChanged:
             refreshPins()
         case .pinClicked(let windowID):
             guard pins.contains(windowID) else { return }
             windowSystem.focusWindow(windowID)
+        case .windowAppeared(let windowID):
+            place(windowID)
         case .windowClosed(let windowID):
+            appearedWindows.remove(windowID)
             unpin(windowID)
         }
     }
@@ -85,6 +98,10 @@ public final class Engine {
             return pin(request.arguments["window"])
         case "unpin":
             return unpinCommand(request.arguments["window"])
+        case "pause":
+            return pause()
+        case "resume":
+            return resume()
         case "doctor":
             guard let runDoctor else { return CommandReply(text: "The Doctor isn't available here.", isError: true) }
             return CommandReply(text: runDoctor())
@@ -220,7 +237,8 @@ public final class Engine {
             },
             pins: pins.compactMap { handles[$0] },
             drift: report.drift,
-            softDrift: report.softDrift
+            softDrift: report.softDrift,
+            isPaused: isPaused
         )
     }
 
