@@ -1,41 +1,46 @@
 import Foundation
 
-/// One Doctor check's result. Checks are independent: a failure in one never stops the others.
-public struct CheckResult: Sendable {
-    public enum Outcome: Sendable {
+/// What one Doctor check found. Checks are independent: a failure in one never stops the others.
+public struct CheckOutcome: Sendable {
+    public enum Status: Sendable {
         case pass
         case fail(suspectedCause: String)
         case skipped(reason: String)
     }
 
-    public let title: String
-    public let outcome: Outcome
+    public let status: Status
     public let summary: String
     public let details: [String]
 
-    public init(title: String, outcome: Outcome, summary: String, details: [String] = []) {
-        self.title = title
-        self.outcome = outcome
+    public init(_ status: Status, summary: String, details: [String] = []) {
+        self.status = status
         self.summary = summary
         self.details = details
     }
+}
+
+/// A check's outcome under the check's title.
+public struct CheckResult: Sendable {
+    public let title: String
+    public let outcome: CheckOutcome
+    public var status: CheckOutcome.Status { outcome.status }
 
     public var passed: Bool {
-        if case .pass = outcome { return true }
+        if case .pass = status { return true }
         return false
     }
 
     public var failed: Bool {
-        if case .fail = outcome { return true }
+        if case .fail = status { return true }
         return false
     }
 }
 
 public struct DoctorCheck: Sendable {
     public let title: String
-    public let run: @MainActor @Sendable () -> CheckResult
+    public let run: @MainActor @Sendable () -> CheckOutcome
 
-    public init(title: String, run: @escaping @MainActor @Sendable () -> CheckResult) {
+    public init(title: String, run: @escaping @MainActor @Sendable () -> CheckOutcome) {
         self.title = title
         self.run = run
     }
@@ -71,7 +76,7 @@ public final class Doctor {
         var results: [CheckResult] = []
         for check in checks {
             try write(results: results, running: check.title)
-            results.append(check.run())
+            results.append(CheckResult(title: check.title, outcome: check.run()))
         }
         try write(results: results, running: nil)
         return results
@@ -126,19 +131,19 @@ enum DoctorReport {
 
         lines += ["", "## Checks", "", "| Check | Result |", "| --- | --- |"]
         for result in results {
-            lines.append("| \(result.title) | \(label(result.outcome)): \(result.summary) |")
+            lines.append("| \(result.title) | \(label(result.status)): \(result.outcome.summary) |")
         }
         if let running {
             lines.append("| \(running) | ⏳ Running (if this is still here, the check crashed or hung the Doctor) |")
         }
 
         for result in results {
-            lines += ["", "### \(result.title): \(label(result.outcome))", "", result.summary]
-            if !result.details.isEmpty {
+            lines += ["", "### \(result.title): \(label(result.status))", "", result.outcome.summary]
+            if !result.outcome.details.isEmpty {
                 lines.append("")
-                lines += result.details.map { "- \($0)" }
+                lines += result.outcome.details.map { "- \($0)" }
             }
-            switch result.outcome {
+            switch result.status {
             case .fail(let cause): lines += ["", "**Suspected cause:** \(cause)"]
             case .skipped(let reason): lines += ["", "**Skipped because:** \(reason)"]
             case .pass: break
@@ -158,8 +163,8 @@ enum DoctorReport {
         return lines.joined(separator: "\n")
     }
 
-    private static func label(_ outcome: CheckResult.Outcome) -> String {
-        switch outcome {
+    private static func label(_ status: CheckOutcome.Status) -> String {
+        switch status {
         case .pass: "✅ Pass"
         case .fail: "❌ Fail"
         case .skipped: "⏭ Skipped"

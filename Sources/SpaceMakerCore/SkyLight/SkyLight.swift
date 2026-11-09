@@ -17,7 +17,6 @@ public final class SkyLight: @unchecked Sendable {
         }
 
         public let id: UInt64
-        public let uuid: String
         public let kind: Kind
     }
 
@@ -26,6 +25,8 @@ public final class SkyLight: @unchecked Sendable {
         public let displayIdentifier: String
         public let currentDesktopID: UInt64?
         public let desktops: [NativeDesktop]
+
+        public var regularDesktopIDs: [UInt64] { desktops.filter { $0.kind == .regular }.map(\.id) }
     }
 
     public struct Symbol: Sendable {
@@ -44,7 +45,7 @@ public final class SkyLight: @unchecked Sendable {
     private static let moveOperationClassName = "SLSBridgedMoveWindowsToManagedSpaceOperation"
     private static let moveOperationInitializer = "initWithWindows:spaceID:"
     /// Asks SkyLight for every desktop a window is on (current, other and fullscreen desktops).
-    private static let allSpacesMask: Int32 = 0x7
+    private static let allDesktopsMask: Int32 = 0x7
 
     private let mainConnectionID: MainConnectionIDFn?
     private let copyManagedDisplaySpaces: CopyManagedDisplaySpacesFn?
@@ -109,7 +110,7 @@ public final class SkyLight: @unchecked Sendable {
                 case 4: .fullscreen
                 default: .other(type)
                 }
-                return NativeDesktop(id: id, uuid: space["uuid"] as? String ?? "", kind: kind)
+                return NativeDesktop(id: id, kind: kind)
             }
             return DisplayDesktops(
                 displayIdentifier: display["Display Identifier"] as? String ?? "unknown",
@@ -122,8 +123,7 @@ public final class SkyLight: @unchecked Sendable {
     /// The desktops a window is on, or nil if SkyLight can't be read.
     public func desktopIDs(forWindow windowID: UInt32) -> [UInt64]? {
         guard let copySpacesForWindows, let connection else { return nil }
-        let windows = [NSNumber(value: Int32(bitPattern: windowID))] as CFArray
-        guard let ids = copySpacesForWindows(connection, Self.allSpacesMask, windows)?.takeRetainedValue() as? [NSNumber]
+        guard let ids = copySpacesForWindows(connection, Self.allDesktopsMask, Self.windowList(windowID))?.takeRetainedValue() as? [NSNumber]
         else { return nil }
         return ids.map(\.uint64Value)
     }
@@ -133,11 +133,10 @@ public final class SkyLight: @unchecked Sendable {
     /// Returns false only if the operation couldn't be issued at all.
     public func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
         guard let performBridgedOperation, let moveOperationClass, let moveOperationInit else { return false }
-        let windows = [NSNumber(value: Int32(bitPattern: windowID))] as CFArray
 
         // +1 from alloc is consumed by init, which returns its own +1 that ARC takes over.
         guard let allocated = (moveOperationClass as AnyObject).perform(NSSelectorFromString("alloc"))?.toOpaque(),
-              let initialized = moveOperationInit(allocated, NSSelectorFromString(Self.moveOperationInitializer), windows, desktopID)
+              let initialized = moveOperationInit(allocated, NSSelectorFromString(Self.moveOperationInitializer), Self.windowList(windowID), desktopID)
         else { return false }
         let operation = Unmanaged<AnyObject>.fromOpaque(initialized).takeRetainedValue()
 
@@ -145,6 +144,10 @@ public final class SkyLight: @unchecked Sendable {
             _ = performBridgedOperation(Unmanaged.passUnretained(operation).toOpaque())
         }
         return true
+    }
+
+    private static func windowList(_ windowID: UInt32) -> CFArray {
+        [NSNumber(value: Int32(bitPattern: windowID))] as CFArray
     }
 
     private static func desktopID(_ space: [String: Any]) -> UInt64? {

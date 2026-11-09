@@ -18,12 +18,13 @@ guard arguments.contains("--doctor") else {
 
 MainActor.assumeIsolated {
     _ = NSApplication.shared  // SkyLight expects an AppKit connection to WindowServer.
-    let helper = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("space-maker-move-helper")
+    let executable = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+    let helper = executable.deletingLastPathComponent().appendingPathComponent("space-maker-move-helper")
     let doctor = StandardDoctor.make(skyLight: SkyLight(), helperExecutable: helper, logsDirectory: StandardDoctor.defaultLogsDirectory)
     do {
         let results = try doctor.run()
         print(doctor.reportURL.path)
-        exit(results.contains(where: \.failed) ? 1 : 0)
+        exit(results.allSatisfy(\.passed) ? 0 : 1)
     } catch {
         FileHandle.standardError.write(Data("Doctor could not write its report: \(error.localizedDescription)\n".utf8))
         exit(2)

@@ -8,7 +8,7 @@ import MachO
 /// Ported from yabai's `src/misc/macho_dlsym.h`.
 enum MachOSymbols {
     static func find(symbol: String, inImage imagePath: String) -> UnsafeMutableRawPointer? {
-        guard let (header, slide) = loadedImage(path: imagePath) else { return nil }
+        guard let (header, slide) = loadedImage(path: imagePath), header.pointee.magic == MH_MAGIC_64 else { return nil }
 
         var linkedit: UnsafePointer<segment_command_64>?
         var symtab: UnsafePointer<symtab_command>?
@@ -37,6 +37,8 @@ enum MachOSymbols {
         return symbol.withCString { target in
             for index in 0..<Int(symtab.pointee.nsyms) {
                 let entry = entries[index]
+                // Skip debugger (stab) entries and undefined references; only defined symbols have addresses.
+                if Int32(entry.n_type) & N_STAB != 0 || Int32(entry.n_type) & N_TYPE == N_UNDF { continue }
                 let name = strings.advanced(by: Int(entry.n_un.n_strx)).assumingMemoryBound(to: CChar.self)
                 if strcmp(name, target) == 0 {
                     return UnsafeMutableRawPointer(bitPattern: Int(entry.n_value) + slide)

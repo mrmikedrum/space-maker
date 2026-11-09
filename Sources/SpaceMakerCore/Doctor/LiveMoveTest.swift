@@ -8,17 +8,15 @@ struct LiveMoveTest {
     let skyLight: SkyLight
     let helperExecutable: URL
 
-    private let title = StandardDoctor.liveMoveTitle
     private let settleTimeout: TimeInterval = 3
 
-    func run() -> CheckResult {
+    func run() -> CheckOutcome {
         guard skyLight.canReadDesktops else {
-            return skipped("SkyLight's read-only desktop calls are missing (see Private SkyLight symbols).")
+            return skipped("SkyLight's read-only desktop calls are missing (see \(StandardDoctor.symbolsTitle)).")
         }
         guard skyLight.canMoveWindows else {
-            return CheckResult(
-                title: title,
-                outcome: .fail(suspectedCause: "The bridged move operation isn't available on this macOS build (see Private SkyLight symbols). yabai v7.1.25 confirms it on Tahoe 26.4+; upgrading macOS is the likely fix."),
+            return CheckOutcome(
+                .fail(suspectedCause: "The bridged move operation isn't available on this macOS build (see \(StandardDoctor.symbolsTitle)). yabai v7.1.25 confirms it on Tahoe 26.4+; upgrading macOS is the likely fix."),
                 summary: "Can't issue a move: the bridged move operation is missing."
             )
         }
@@ -50,14 +48,13 @@ struct LiveMoveTest {
         details.append(back.detail)
 
         guard there.landed, back.landed else {
-            return CheckResult(
-                title: title,
-                outcome: .fail(suspectedCause: "WindowServer accepted the bridged move but ignored it. This method is confirmed on Tahoe 26.4+ and unconfirmed on macOS 15; upgrading macOS is the likely fix. If already on 26.4.1–26.6, moves into an empty desktop are a known failure (yabai #2789): put any window on the target desktop and retry."),
+            return CheckOutcome(
+                .fail(suspectedCause: "WindowServer accepted the bridged move but ignored it. This method is confirmed on Tahoe 26.4+ and unconfirmed on macOS 15; upgrading macOS is the likely fix. If already on 26.4.1–26.6, moves into an empty desktop are a known failure (yabai #2789): put any window on the target desktop and retry."),
                 summary: "The window did not move\(there.landed ? " back" : "").",
                 details: details
             )
         }
-        return CheckResult(title: title, outcome: .pass, summary: "Moved the helper's window to desktop \(target) and back.", details: details)
+        return CheckOutcome(.pass, summary: "Moved the helper's window to desktop \(target) and back.", details: details)
     }
 
     private func move(_ windowID: UInt32, to desktop: UInt64) -> (landed: Bool, detail: String) {
@@ -78,7 +75,7 @@ struct LiveMoveTest {
             if let ids = skyLight.desktopIDs(forWindow: windowID), ids.count == 1, matching(ids[0]) {
                 return ids[0]
             }
-            Thread.sleep(forTimeInterval: 0.05)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         } while Date() < deadline
         return nil
     }
@@ -86,15 +83,14 @@ struct LiveMoveTest {
     /// Prefers another regular desktop on the same display, then any other display's.
     private func otherRegularDesktop(than origin: UInt64) -> UInt64? {
         let displays = skyLight.displayDesktops() ?? []
-        let regular: (SkyLight.DisplayDesktops) -> [UInt64] = { $0.desktops.filter { $0.kind == .regular }.map(\.id) }
         let home = displays.first { $0.desktops.contains { $0.id == origin } }
-        let sameDisplay = home.map(regular)?.filter { $0 != origin } ?? []
-        let elsewhere = displays.filter { $0.displayIdentifier != home?.displayIdentifier }.flatMap(regular)
+        let sameDisplay = home?.regularDesktopIDs.filter { $0 != origin } ?? []
+        let elsewhere = displays.filter { $0.displayIdentifier != home?.displayIdentifier }.flatMap(\.regularDesktopIDs)
         return (sameDisplay + elsewhere).first
     }
 
-    private func skipped(_ reason: String) -> CheckResult {
-        CheckResult(title: title, outcome: .skipped(reason: reason), summary: "Not run.")
+    private func skipped(_ reason: String) -> CheckOutcome {
+        CheckOutcome(.skipped(reason: reason), summary: "Not run.")
     }
 }
 
@@ -124,7 +120,7 @@ private final class HelperProcess {
         process.standardInput = stdin
         try process.run()
 
-        let line = FirstLine(stdout.fileHandleForReading)
+        let line = FirstLineReader(stdout.fileHandleForReading)
         guard let text = line.wait(timeout: 5), let windowID = UInt32(text) else {
             process.terminate()
             throw LaunchError(errorDescription: "it didn't report a window ID within 5s")
@@ -140,7 +136,7 @@ private final class HelperProcess {
 }
 
 /// Reads the first line from a pipe on a background thread, with a timeout.
-private final class FirstLine: @unchecked Sendable {
+private final class FirstLineReader: @unchecked Sendable {
     private let done = DispatchSemaphore(value: 0)
     private var line: String?
 

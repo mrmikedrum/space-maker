@@ -59,3 +59,9 @@ _Avoid_: Deviation, diff
 **Soft Drift**:
 Drift that Space Maker cannot fix itself, such as desktop order on a display. Only the user can resolve it, by rearranging and then Saving.
 _Avoid_: Warning, unfixable drift
+
+## Health
+
+**Doctor**:
+Space Maker's self-check of everything it relies on in macOS, ending in a report the user can hand to an agent. Its **Live move test** moves a window owned by another process between desktops and back.
+_Avoid_: Health check, diagnostics, self-test
