@@ -10,6 +10,17 @@ public protocol WindowSystem: AnyObject {
 
     /// Moves a window to a native desktop. Returns false if the move didn't land.
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool
+
+    /// Sets a Chrome window's name (Chrome's `given name`), which Chrome keeps across a relaunch.
+    /// May ask the user for Automation permission.
+    func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult
+}
+
+public enum WindowNamingResult: Equatable, Sendable {
+    case named
+    /// The user hasn't allowed Space Maker to automate Chrome; the reason says how to fix it.
+    case denied(String)
+    case failed(String)
 }
 
 public struct WindowSystemDisplay: Equatable, Sendable {
@@ -65,10 +76,13 @@ public struct WindowSystemWindow: Equatable, Sendable {
     public var chromeProfile: ChromeProfile
     /// False for panels, dialogs and sheets.
     public var isStandard: Bool
+    /// The name the window was given (Chrome's `given name`), if it has one and it could be read.
+    /// Chrome shows a named window's name as its title.
+    public var name: String?
 
     public init(
         id: UInt32, bundleID: String, appName: String, title: String, desktopID: UInt64?,
-        isFullscreen: Bool, chromeProfile: ChromeProfile, isStandard: Bool
+        isFullscreen: Bool, chromeProfile: ChromeProfile, isStandard: Bool, name: String? = nil
     ) {
         self.id = id
         self.bundleID = bundleID
@@ -78,5 +92,6 @@ public struct WindowSystemWindow: Equatable, Sendable {
         self.isFullscreen = isFullscreen
         self.chromeProfile = chromeProfile
         self.isStandard = isStandard
+        self.name = name
     }
 }

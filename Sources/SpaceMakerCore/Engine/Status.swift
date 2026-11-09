@@ -55,12 +55,16 @@ public struct WindowStatus: Codable, Equatable, Sendable {
     public var chromeProfile: String?
     public var isFullscreen: Bool
     public var title: String
+    /// The window's name (Chrome's `given name`), if it has one.
+    public var name: String?
     /// Nil when the window isn't on exactly one known desktop.
     public var desktop: DesktopReference?
+    /// The Space its Assignment puts it on; nil when it has no Assignment.
+    public var assignment: String?
 
     public init(
         handle: String, app: String, bundleID: String, chromeProfile: String?,
-        isFullscreen: Bool, title: String, desktop: DesktopReference?
+        isFullscreen: Bool, title: String, name: String? = nil, desktop: DesktopReference?, assignment: String? = nil
     ) {
         self.handle = handle
         self.app = app
@@ -68,6 +72,8 @@ public struct WindowStatus: Codable, Equatable, Sendable {
         self.chromeProfile = chromeProfile
         self.isFullscreen = isFullscreen
         self.title = title
+        self.name = name
         self.desktop = desktop
+        self.assignment = assignment
     }
 }

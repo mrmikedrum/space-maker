@@ -30,6 +30,34 @@ final class FakeWindowSystem: WindowSystem {
     func desktop(of windowID: UInt32) -> UInt64? {
         windows.first { $0.id == windowID }?.desktopID
     }
+
+    func window(_ windowID: UInt32) -> WindowSystemWindow? {
+        windows.first { $0.id == windowID }
+    }
+
+    /// Whether the user denied Space Maker Automation permission for Chrome.
+    var chromeAutomationDenied = false
+
+    /// Like Chrome, a named window's title becomes its name.
+    func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult {
+        if chromeAutomationDenied { return .denied("Automation for Google Chrome isn't allowed.") }
+        guard let index = windows.firstIndex(where: { $0.id == windowID && $0.chromeProfile != .notChrome }) else {
+            return .failed("No such Chrome window.")
+        }
+        windows[index].name = name
+        windows[index].title = name
+        return .named
+    }
+
+    /// Quits and relaunches Chrome as macOS 15 does: session restore brings every window back,
+    /// names included, with fresh window IDs (`id + offset`) and every normal window on the current desktop.
+    func relaunchChrome(idOffset: UInt32 = 1000) {
+        let current = displays.flatMap(\.desktops).first(where: \.isCurrent)?.id
+        for index in windows.indices where windows[index].chromeProfile != .notChrome {
+            windows[index].id += idOffset
+            if !windows[index].isFullscreen { windows[index].desktopID = current }
+        }
+    }
 }
 
 extension WindowSystemDisplay {
@@ -51,16 +79,19 @@ extension WindowSystemWindow {
         desktop: UInt64?,
         fullscreen: Bool = false,
         chromeProfile: ChromeProfile = .notChrome,
-        isStandard: Bool = true
+        isStandard: Bool = true,
+        name: String? = nil
     ) -> Self {
         Self(
-            id: id, bundleID: bundleID, appName: appName, title: title, desktopID: desktop,
-            isFullscreen: fullscreen, chromeProfile: chromeProfile, isStandard: isStandard
+            id: id, bundleID: bundleID, appName: appName, title: name ?? title, desktopID: desktop,
+            isFullscreen: fullscreen, chromeProfile: chromeProfile, isStandard: isStandard, name: name
         )
     }
 
-    static func chrome(_ id: UInt32, profile: ChromeProfile, title: String, desktop: UInt64?, fullscreen: Bool = false) -> Self {
-        app(id, "com.google.Chrome", "Google Chrome", title: title, desktop: desktop, fullscreen: fullscreen, chromeProfile: profile)
+    static func chrome(
+        _ id: UInt32, profile: ChromeProfile, title: String, desktop: UInt64?, fullscreen: Bool = false, name: String? = nil
+    ) -> Self {
+        app(id, "com.google.Chrome", "Google Chrome", title: title, desktop: desktop, fullscreen: fullscreen, chromeProfile: profile, name: name)
     }
 }
 

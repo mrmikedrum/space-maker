@@ -29,7 +29,7 @@ public struct MCPShim: Sendable {
     public static let notRunning = "Space Maker isn't running."
 
     public static let tools = [
-        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, and which Space each desktop holds. Displays other than the built-in one are Guest Displays for now."),
+        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title, name, current desktop and Assignment (the Space it belongs on), and which Space each desktop holds. Displays other than the built-in one are Guest Displays for now."),
         Tool(name: "save", description: "Save: record which Space every window is on, and the order of Spaces on each display, into the Layout. A desktop Space Maker hasn't seen before becomes a new Space named after its main app."),
         Tool(name: "restore", description: "Restore: move every window that has an Assignment back to its Space. Give a window handle to restore just that window. Windows without an Assignment are never moved.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\". Omit to restore every window.", isRequired: false),
@@ -42,6 +42,10 @@ public struct MCPShim: Sendable {
         Tool(name: "rename_space", description: "Rename a Space. Its windows stay assigned to it.", parameters: [
             Parameter(name: "space", kind: .string, description: "The Space's current name.", isRequired: true),
             Parameter(name: "name", kind: .string, description: "Its new name.", isRequired: true),
+        ]),
+        Tool(name: "name_window", description: "Name a Chrome window, so Space Maker can tell it apart from other windows of the same profile, even after Chrome relaunches. Chrome shows the name as the window's title. A named window keeps its Assignment while it's closed.", parameters: [
+            Parameter(name: "window", kind: .string, description: "A Chrome window's handle from status, such as \"w3\".", isRequired: true),
+            Parameter(name: "name", kind: .string, description: "The name, such as \"Work main\".", isRequired: true),
         ]),
         Tool(name: "doctor", description: "Run Space Maker's Doctor, a self-check of the macOS internals it relies on, and return its markdown report."),
     ]

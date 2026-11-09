@@ -49,6 +49,8 @@ public final class Engine {
                               save: request.arguments["save"] == "true")
         case "rename_space":
             return renameSpace(request.arguments["space"], to: request.arguments["name"])
+        case "name_window":
+            return nameWindow(handle: request.arguments["window"], name: request.arguments["name"])
         case "doctor":
             guard let runDoctor else { return CommandReply(text: "The Doctor isn't available here.", isError: true) }
             return CommandReply(text: runDoctor())
@@ -70,6 +72,7 @@ public final class Engine {
 
         let windows = windowSystem.readWindows().filter(\.isStandard)
         handles = handles.filter { id, _ in windows.contains { $0.id == id } }
+        let matches = layoutProblem == nil ? Self.match(windows, to: layout.assignments) : [:]
         return Status(
             displaySetup: Self.knownDisplays(displays).map { Self.displayStatus($0, spaces: spaces) },
             guestDisplays: Self.guestDisplays(displays).map { Self.displayStatus($0, spaces: [:]) },
@@ -81,7 +84,9 @@ public final class Engine {
                     chromeProfile: Self.profileText(window.chromeProfile),
                     isFullscreen: window.isFullscreen,
                     title: window.title,
-                    desktop: window.desktopID.flatMap { desktops[$0] }
+                    name: window.name,
+                    desktop: window.desktopID.flatMap { desktops[$0] },
+                    assignment: matches[window.id].map { layout.assignments[$0].space }
                 )
             }
         )
