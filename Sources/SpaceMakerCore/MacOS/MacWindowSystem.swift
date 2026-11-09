@@ -128,6 +128,15 @@ public final class MacWindowSystem: WindowSystem {
 
     // MARK: - Windows
 
+    /// Accessibility only reaches windows on visible desktops, so the rest are judged from WindowServer's
+    /// information. Apps keep untitled helper windows on their desktops (Chrome's fullscreen toolbar, find bar
+    /// and tab-drag windows, for example); a real window has a title and is bigger than a toolbar.
+    /// Titles are only visible with Screen Recording granted, which the Doctor checks.
+    private static func looksStandard(title: String, bounds: CGRect?) -> Bool {
+        guard let bounds, !title.isEmpty else { return false }
+        return bounds.width >= 200 && bounds.height >= 150
+    }
+
     public func readWindows() -> [WindowSystemWindow] {
         var desktopKinds: [UInt64: DesktopKind] = [:]
         for display in readDisplays() {
@@ -175,8 +184,8 @@ public final class MacWindowSystem: WindowSystem {
                 desktopID: desktopID,
                 isFullscreen: desktopID.map { desktopKinds[$0] == .fullscreen } ?? false,
                 chromeProfile: profile,
-                // Accessibility only reaches windows on visible desktops; assume the rest are standard.
-                isStandard: accessibility.map { $0.subrole == kAXStandardWindowSubrole as String } ?? true,
+                isStandard: accessibility.map { $0.subrole == kAXStandardWindowSubrole as String }
+                    ?? Self.looksStandard(title: title, bounds: bounds),
                 name: name,
                 frame: bounds.map { WindowFrame(x: $0.minX, y: $0.minY, width: $0.width, height: $0.height) }
             ))
