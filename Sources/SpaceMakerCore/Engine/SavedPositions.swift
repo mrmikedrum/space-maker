@@ -69,6 +69,12 @@ extension Engine {
             failedMoves.remove(windowID)
         }
         if let frame = plan.frame {
+            // A window can keep its position through a move between displays; then there's nothing to set,
+            // which matters because Accessibility can't reach a window on a hidden desktop to set it.
+            if plan.needsMove, Self.isAt(windowSystem.readWindows().first { $0.id == windowID }?.frame, frame) {
+                failedFrames.remove(windowID)
+                return .done
+            }
             guard windowSystem.setFrame(windowID, to: frame) else {
                 failedFrames.insert(windowID)
                 return .frameFailed

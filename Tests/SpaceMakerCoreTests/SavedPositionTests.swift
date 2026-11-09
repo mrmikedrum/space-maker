@@ -153,6 +153,21 @@ struct SavedPositionTests {
         #expect(world.window(501)?.frame == WindowFrame(x: 100, y: 125, width: 600, height: 400))
     }
 
+    @Test func aWindowThatKeepsItsSavedPositionThroughAMoveBetweenDisplaysIsntRepositioned() throws {
+        let engine = try savedLaptop()
+        try dock(engine)
+        // The user moves Slack to the laptop's desktop; macOS keeps its frame, and it comes back the same way.
+        // Its position can't be set from here (Accessibility can't reach a window on a hidden desktop), and needn't be.
+        world.move(502, to: 12)
+        world.unresizableWindows = [502]
+
+        let reply = engine.perform(CommandRequest(command: "restore"))
+
+        #expect(world.desktop(of: 502) == 21)
+        #expect(!reply.text.contains("saved position"))
+        #expect(engine.status().softDrift.isEmpty)
+    }
+
     @Test func theLayoutRecordsPositionsPerDisplaySetupRelativeToTheDisplay() throws {
         let engine = try savedLaptop()
         try dock(engine)
