@@ -183,6 +183,19 @@ struct FullscreenTests {
         #expect(world.fullscreenChanges.isEmpty)
     }
 
+    @Test func aSpaceCantBeRenamedToAFullscreenWindowsPlace() throws {
+        laptopAlone()
+        let engine = engine()
+        try engine.run("save")
+        let before = try savedLayout()
+
+        let reply = engine.perform(CommandRequest(command: "rename_space", arguments: ["space": "TickTick", "name": "Work fullscreen"]))
+
+        #expect(reply.isError)
+        #expect(reply.text.contains("“Work fullscreen”"))
+        #expect(try savedLayout() == before)
+    }
+
     func savedLayout() throws -> Layout {
         try JSONDecoder().decode(Layout.self, from: Data(contentsOf: layoutURL))
     }

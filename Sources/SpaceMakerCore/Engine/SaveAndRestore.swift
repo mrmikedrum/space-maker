@@ -190,7 +190,7 @@ extension Engine {
                 saved += 1
             }
             let live = Set(matches.values)
-            let places = Set(layout.spaces + layout.displaySetups.flatMap { $0.arrangement.flatMap(\.fullscreenWindows).map(\.name) })
+            let places = Set(layout.spaces).union(fullscreenPlaceNames)
             for (index, assignment) in layout.assignments.enumerated() where !resaved.contains(index) {
                 guard places.contains(assignment.space), live.contains(index) || assignment.window.name != nil else { continue }
                 assignments.append(assignment)
@@ -373,6 +373,9 @@ extension Engine {
             guard !layout.spaces.contains(newName) else {
                 return CommandReply(text: "There's already a Space “\(newName)”.", isError: true)
             }
+            guard !fullscreenPlaceNames.contains(newName) else {
+                return CommandReply(text: "“\(newName)” is already a fullscreen window's place in an Arrangement. Pick another name.", isError: true)
+            }
             let rename = { (name: String) in name == space ? newName : name }
             layout.spaces = layout.spaces.map(rename)
             for setup in layout.displaySetups.indices {
@@ -389,6 +392,11 @@ extension Engine {
     }
 
     // MARK: - Resolution
+
+    /// Every fullscreen window's place named in any Display Setup's Arrangement.
+    var fullscreenPlaceNames: Set<String> {
+        Set(layout.displaySetups.flatMap { $0.arrangement.flatMap(\.fullscreenWindows).map(\.name) })
+    }
 
     /// Each Space's native desktop in the current Display Setup (ADR 0003), or nil if nothing is saved for it.
     func resolvedSpaces(_ displays: [WindowSystemDisplay]) -> [String: UInt64]? {
