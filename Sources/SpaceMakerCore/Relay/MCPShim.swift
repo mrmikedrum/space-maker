@@ -62,8 +62,8 @@ public struct MCPShim: Sendable {
         Tool(name: "unpin", description: "Remove a window's Pin.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
         ]),
-        Tool(name: "pause", description: "Pause automatic behaviour: windows that appear (such as after Chrome relaunches) stay where they are instead of going to their Space. Commands still work. status reports isPaused."),
-        Tool(name: "resume", description: "Resume automatic behaviour after pause. Windows that appeared while paused stay put until restored."),
+        Tool(name: "pause", description: "Pause automatic behaviour: windows that appear (such as after Chrome relaunches) stay where they are instead of going to their Space, and display changes don't trigger a Restore. Commands still work. status reports isPaused."),
+        Tool(name: "resume", description: "Resume automatic behaviour after pause. Windows that appeared, and display changes that happened, while paused stay as they are until restored."),
         Tool(name: "doctor", description: "Run Space Maker's Doctor, a self-check of the macOS internals it relies on, and return its markdown report."),
     ]
 

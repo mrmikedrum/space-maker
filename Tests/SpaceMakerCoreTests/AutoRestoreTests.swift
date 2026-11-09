@@ -136,4 +136,24 @@ struct AutoRestoreTests {
         #expect(world.desktop(of: 501) == 12)
         #expect(engine.status().softDrift.contains { $0.problem.contains("Display Setup") })
     }
+
+    @Test func noAutomaticRestoreWhilePausedAndNoneOwedAfterResume() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)
+        try engine.run("pause")
+
+        world.undock("dell-uuid")
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+        #expect(world.desktop(of: 503) == 11)  // where macOS merged it
+
+        try engine.run("resume")
+        world.clock.advance(by: 600)
+        #expect(world.desktop(of: 503) == 11)  // resuming doesn't replay the change; Restore all does
+
+        world.redock(.dell(desktops: [.regular(22, current: true), .regular(23), .regular(24)]))
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+        #expect(world.desktop(of: 503) == 22)  // the next change after resuming Restores as usual
+    }
 }

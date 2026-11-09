@@ -53,9 +53,10 @@ extension Engine {
         }
     }
 
-    /// A full Restore nobody asked for: it runs only while automatic behaviour is on.
+    /// A full Restore nobody asked for: it runs only while automatic behaviour isn't paused.
+    /// A change that settles while paused is not replayed on resume; Restore all catches up.
     private func restoreAutomatically() {
-        // Pause (ticket 05) belongs here, the one place automatic Restore runs: `guard !isPaused else { return }`.
+        guard !isPaused else { return }
         _ = restore(handle: nil)
     }
 }

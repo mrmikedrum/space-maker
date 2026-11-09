@@ -80,7 +80,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(menuItem("Save All", #selector(saveAllClicked)))
         menu.addItem(menuItem("Restore All", #selector(restoreAllClicked)))
         menu.addItem(menuItem("Pin or Unpin Frontmost Window", #selector(pinFrontmostClicked)))
-        menu.addItem(menuItem(status.isPaused ? "Resume Automatic Placement" : "Pause Automatic Placement", #selector(pauseClicked)))
+        menu.addItem(menuItem(status.isPaused ? "Resume Automatic Placement and Restore" : "Pause Automatic Placement and Restore", #selector(pauseClicked)))
 
         if !status.drift.isEmpty {
             menu.addItem(.separator())
@@ -289,7 +289,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.title = ""
             button.toolTip = "Space Maker"
         }
-        if engine.isPaused { button.toolTip = (button.toolTip ?? "Space Maker") + " (automatic placement paused)" }
+        if engine.isPaused { button.toolTip = (button.toolTip ?? "Space Maker") + " (automatic placement and restore paused)" }
     }
 
     // MARK: - Login item
