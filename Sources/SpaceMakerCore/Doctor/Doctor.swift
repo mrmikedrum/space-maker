@@ -62,7 +62,9 @@ public final class Doctor {
         verdict: @escaping ([CheckResult]) -> String
     ) {
         let stamp = Self.fileTimestamp.string(from: Date())
-        self.reportURL = logsDirectory.appendingPathComponent("doctor-\(stamp).md")
+        // A short random suffix keeps two Doctors (the app's and the command line's) from sharing a report.
+        let suffix = UUID().uuidString.prefix(6).lowercased()
+        self.reportURL = logsDirectory.appendingPathComponent("doctor-\(stamp)-\(suffix).md")
         self.environment = environment
         self.checks = checks
         self.verdict = verdict
