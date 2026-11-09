@@ -249,7 +249,7 @@ public final class MacWindowSystem: WindowSystem {
     public func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool {
         guard let info = Self.windowInfo(windowID),
               let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element
+              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element ?? reachByShowing(windowID, ownedBy: pid)
         else { return false }
         func settled() -> Bool {
             guard let desktops = skyLight.desktopIDs(forWindow: windowID), desktops.count == 1 else { return false }
@@ -269,6 +269,20 @@ public final class MacWindowSystem: WindowSystem {
         } while Date() < deadline
         return false
     }
+
+    /// Accessibility only reaches windows on the desktop being shown, so a window on another desktop (a fullscreen
+    /// window Restore has to take out and put back, say) is brought to the front first, switching to its desktop.
+    private func reachByShowing(_ windowID: UInt32, ownedBy pid: pid_t) -> AXUIElement? {
+        focusWindow(windowID)
+        let deadline = Date().addingTimeInterval(Self.reachTimeout)
+        repeat {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            if let element = Self.accessibilityWindows(pid: pid)[windowID]?.element { return element }
+        } while Date() < deadline
+        return nil
+    }
+
+    private static let reachTimeout: TimeInterval = 2
 
     /// Finds the window through Chrome's AppleScript by its title and bounds, since AppleScript window IDs aren't WindowServer IDs.
     public func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult {
