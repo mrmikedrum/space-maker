@@ -9,7 +9,11 @@ struct DisplayChangeProgress {
     var reads = 0
     /// The last display change never settled, so no automatic Restore ran: Soft Drift until a later one settles or the user Restores.
     var neverSettled = false
-    /// Where windows were, by window ID, at the first reconfiguration event since the last automatic Restore.
+    /// Where windows were, by window ID, the last time the engine looked at the world with the displays settled.
+    /// macOS can shove windows before it reports a reconfiguration, so this is kept up to date beforehand.
+    var stableFrames: [UInt32: FrameBefore] = [:]
+    /// `stableFrames` as they were when the first reconfiguration event since the last automatic Restore arrived.
+    /// While this is set, a display change is under way and `stableFrames` is left alone.
     var framesBefore: [UInt32: FrameBefore]?
 }
 
@@ -28,8 +32,8 @@ struct DesktopsRead: Equatable {
 
 /// Automatic Restore on display change: debounce the reconfiguration events, wait until two consecutive
 /// reads of the desktops match, then run a full Restore. Desktops that never settle get no Restore.
-/// Windows with no saved position for the Display Setup go back to where they were before the change,
-/// if they're still on the same display.
+/// Windows with an Assignment but no saved position for the Display Setup go back to where they were before the
+/// change, if they're still on the same known display.
 extension Engine {
     /// How long reconfiguration events must stop before Space Maker looks at the desktops.
     static let displayChangeDebounce: TimeInterval = 1
@@ -39,7 +43,7 @@ extension Engine {
     static let desktopSettleMaxReads = 20
 
     func displaysReconfigured() {
-        if displayChange.framesBefore == nil { displayChange.framesBefore = currentFrames() }
+        if displayChange.framesBefore == nil { displayChange.framesBefore = displayChange.stableFrames }
         displayChange.generation += 1
         displayChange.lastRead = nil
         displayChange.reads = 0
@@ -58,7 +62,7 @@ extension Engine {
         if read == displayChange.lastRead {
             displayChange.lastRead = nil
             displayChange.neverSettled = false
-            restoreAutomatically()
+            restoreAutomatically(generation)
             return
         }
         // A Restore on a half-finished read would send windows to the wrong desktops, so give up and say so.
@@ -76,21 +80,32 @@ extension Engine {
 
     /// A full Restore nobody asked for: it runs only while automatic behaviour isn't paused.
     /// A change that settles while paused is not replayed on resume; Restore all catches up.
-    private func restoreAutomatically() {
-        guard !isMovingWindows else {  // a Placement is under way: Restore once it's done
-            windowSystem.schedule(after: Self.desktopSettlePollInterval) { [weak self] in self?.restoreAutomatically() }
+    /// `generation` is the display change whose desktops settled; a later change makes this lapse.
+    private func restoreAutomatically(_ generation: Int) {
+        guard generation == displayChange.generation else { return }  // a later change is settling afresh
+        guard !isMovingWindows else {  // a Placement or Restore is under way: Restore once it's done
+            windowSystem.schedule(after: Self.desktopSettlePollInterval) { [weak self] in self?.restoreAutomatically(generation) }
             return
         }
         let framesBefore = displayChange.framesBefore ?? [:]
         displayChange.framesBefore = nil
-        guard !isPaused else { return }
-        _ = restore(handle: nil)
-        putBackFrames(framesBefore)
+        if !isPaused {
+            _ = restore(handle: nil)
+            putBackFrames(framesBefore)
+        }
+        noteStableFrames()
     }
 
-    /// Every normal window's position and display, keyed by window ID.
+    /// Records where windows are now, unless a display change is under way (then the world may be half-rearranged).
+    /// Called whenever the engine looks at the world: commands, status and window events.
+    func noteStableFrames() {
+        guard displayChange.framesBefore == nil, !isMovingWindows else { return }
+        displayChange.stableFrames = currentFrames()
+    }
+
+    /// Every normal window's position and known display, keyed by window ID. Guest Displays are left out.
     private func currentFrames() -> [UInt32: FrameBefore] {
-        let displays = windowSystem.readDisplays()
+        let displays = knownDisplays(windowSystem.readDisplays())
         var result: [UInt32: FrameBefore] = [:]
         for window in windowSystem.readWindows() where window.isStandard && !window.isFullscreen {
             guard let frame = window.frame, let display = Self.display(of: window, in: displays) else { continue }
@@ -103,19 +118,21 @@ extension Engine {
         displays.first { $0.desktops.contains { $0.id == window.desktopID } }?.id
     }
 
-    /// Puts windows that macOS moved during the change back where they were, if they're still on the same display
-    /// and Restore doesn't own their position (they have no saved position for this Display Setup).
+    /// Puts windows that macOS moved during the change back where they were, if they're still on the same known
+    /// display, have an Assignment, and Restore doesn't own their position (no saved position for this Display Setup).
+    /// Windows without an Assignment are never moved.
     private func putBackFrames(_ framesBefore: [UInt32: FrameBefore]) {
         guard !framesBefore.isEmpty, layoutProblem == nil, movesDisabledReason == nil else { return }
         let displays = windowSystem.readDisplays()
         guard resolvedSpaces(displays) != nil else { return }  // an unknown Display Setup gets no automatic Restore
         let setup = displaySetupKey(displays)
+        let known = knownDisplays(displays)
         let windows = windowSystem.readWindows().filter(\.isStandard)
         let matches = Self.match(windows, to: layout.assignments)
         for window in windows where !window.isFullscreen && !isIgnored(window) {
-            guard let before = framesBefore[window.id], Self.display(of: window, in: displays) == before.display,
+            guard let before = framesBefore[window.id], Self.display(of: window, in: known) == before.display,
                   !Self.isAt(window.frame, before.frame),
-                  matches[window.id].map({ layout.assignments[$0].frame(in: setup) == nil }) ?? true
+                  let assignment = matches[window.id], layout.assignments[assignment].frame(in: setup) == nil
             else { continue }
             _ = movingWindows { windowSystem.setFrame(window.id, to: before.frame) }
         }

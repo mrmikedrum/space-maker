@@ -62,6 +62,7 @@ public final class Engine {
         self.layoutURL = layoutURL
         self.runDoctor = runDoctor
         reloadLayoutIfChanged()
+        noteStableFrames()
         windowSystem.onEvent = { [weak self] event in self?.handle(event) }
     }
 
@@ -70,7 +71,10 @@ public final class Engine {
 
     /// Reacts to an event from the `WindowSystem` port.
     private func handle(_ event: WindowSystemEvent) {
-        defer { onChange?() }
+        defer {
+            noteStableFrames()
+            onChange?()
+        }
         switch event {
         case .activeSpaceChanged:
             refreshPins()
@@ -89,6 +93,7 @@ public final class Engine {
 
     /// The command interface the socket relay and the menu bar share.
     public func perform(_ request: CommandRequest) -> CommandReply {
+        defer { noteStableFrames() }
         if isMovingWindows, request.command != "status" {
             return CommandReply(text: "Space Maker is in the middle of moving windows. Try again in a moment.", isError: true)
         }
@@ -252,6 +257,7 @@ public final class Engine {
         ignoredWindows = ignoredWindows.filter { id in windows.contains { $0.id == id } }
         let report = drift(displays: displays, windows: windows)
         let matches = layoutProblem == nil ? Self.match(windows, to: layout.assignments) : [:]
+        noteStableFrames()
         return Status(
             displaySetup: knownDisplays(displays).map { Self.displayStatus($0, spaces: spaces) },
             guestDisplays: guestDisplays(displays).map { Self.displayStatus($0, spaces: [:]) },

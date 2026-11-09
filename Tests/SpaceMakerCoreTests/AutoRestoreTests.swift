@@ -115,26 +115,92 @@ struct AutoRestoreTests {
         #expect(!engine.status().softDrift.contains { $0.problem.contains("settle") })
     }
 
-    @Test func aWindowWithoutASavedPositionThatMacOSShovesAsideDuringADisplayChangeGoesBackWhereItWas() throws {
+    @Test func anAssignedWindowWithoutASavedPositionThatMacOSShovedBeforeTheEventGoesBackWhereItWas() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)  // no positions were saved: the windows had none
+        let before = WindowFrame(x: 1700, y: 100, width: 800, height: 600)
+        world.place(503, at: before)
+        let textEdit = WindowFrame(x: 100, y: 100, width: 600, height: 400)
+        world.windows.append(.app(506, "com.apple.TextEdit", "TextEdit", title: "List", desktop: 11, frame: textEdit))
+        _ = engine.status()  // Space Maker sees the world as it is
+
+        // An AirPlay screen connects. macOS shoves Safari into a corner of the Dell, and TextEdit (no Assignment)
+        // aside on the laptop, before it says anything about the change.
+        world.displays.append(.external("airplay-uuid", name: "Living Room TV", desktops: [.regular(31, current: true)]))
+        let shoved = WindowFrame(x: 1512, y: 25, width: 800, height: 600)
+        world.place(503, at: shoved)
+        let textEditShoved = WindowFrame(x: 0, y: 25, width: 600, height: 400)
+        world.place(506, at: textEditShoved)
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+
+        #expect(world.window(503)?.frame == before)  // back where it was on the same display
+        #expect(world.window(506)?.frame == textEditShoved)  // no Assignment: never moved
+    }
+
+    @Test func windowsWithoutAnAssignmentAreNeverPutBackAfterADisplayChange() throws {
         let engine = engine()
         try savedLaptopThenDocked(engine)
         let before = WindowFrame(x: 1700, y: 100, width: 800, height: 600)
         world.openWindow(.app(505, "com.apple.Preview", "Preview", title: "Notes.pdf", desktop: 21, frame: before))
-        let elsewhere = WindowFrame(x: 1512, y: 25, width: 800, height: 600)
-        world.windows.append(.app(506, "com.apple.TextEdit", "TextEdit", title: "List", desktop: 11, frame: elsewhere))
 
-        // An AirPlay screen connects; while macOS rearranges, it shoves Preview into a corner of the Dell, and
-        // TextEdit off the laptop onto the Dell.
         world.reconfigureDisplays()
         world.displays.append(.external("airplay-uuid", name: "Living Room TV", desktops: [.regular(31, current: true)]))
-        world.place(505, at: WindowFrame(x: 1512, y: 25, width: 800, height: 600))
-        world.move(506, to: 21)
-        world.place(506, at: WindowFrame(x: 2000, y: 300, width: 800, height: 600))
+        let shoved = WindowFrame(x: 1512, y: 25, width: 800, height: 600)
+        world.place(505, at: shoved)
         world.reconfigureDisplays()
         world.clock.advance(by: 30)
 
-        #expect(world.window(505)?.frame == before)  // back where it was on the same display
-        #expect(world.window(506)?.frame == WindowFrame(x: 2000, y: 300, width: 800, height: 600))  // another display now: left alone
+        #expect(world.window(505)?.frame == shoved)
+    }
+
+    @Test func windowsOnAGuestDisplayAreNotPutBackAfterADisplayChange() throws {
+        world.displays = [.builtIn(desktops: [.regular(11, current: true), .regular(12)])]
+        world.windows = [.app(502, "com.apple.Keynote", "Keynote", title: "Talk", desktop: 12)]
+        let engine = engine()
+        try engine.run("save")
+
+        // The user presents Keynote on the TV, and macOS won't let it be moved off it.
+        world.displays.append(.external("airplay-uuid", name: "Living Room TV", desktops: [.regular(31, current: true)]))
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+        world.move(502, to: 31)
+        world.unmovableWindows = [502]
+        world.place(502, at: WindowFrame(x: 1600, y: 100, width: 1000, height: 700))
+        _ = engine.status()
+
+        // Sidecar connects too; while macOS rearranges, it nudges Keynote on the TV.
+        world.reconfigureDisplays()
+        let nudged = WindowFrame(x: 1512, y: 25, width: 1000, height: 700)
+        world.place(502, at: nudged)
+        world.displays.append(.external("sidecar-uuid", name: "iPad", desktops: [.regular(41, current: true)],
+                                        visibleFrame: WindowFrame(x: -1024, y: 0, width: 1024, height: 768)))
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+
+        #expect(world.window(502)?.frame == nudged)  // Space Maker never puts anything on a Guest Display
+    }
+
+    @Test func aRestoreWaitingForAMoveToFinishLapsesWhenANewerDisplayChangeArrives() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)
+        world.move(501, to: 12)  // so Restore all has a move to make
+
+        // While Restore all's move lands, a display change settles (its Restore waits for the move), and then
+        // the Dell drops out and macOS starts shuffling desktops that never settle.
+        world.whileNextMoveLands = { [world] in
+            world.reconfigureDisplays()
+            world.clock.advance(by: 2)
+            world.undock("dell-uuid")
+            world.unsettledReads = 1000
+            world.reconfigureDisplays()
+        }
+        _ = engine.perform(CommandRequest(command: "restore"))
+        let moves = world.moveAttempts
+
+        world.clock.advance(by: 120)
+        #expect(world.moveAttempts == moves)  // no Restore against desktops that never settled
+        #expect(engine.status().softDrift.contains { $0.problem.contains("settle") })
     }
 
     @Test func whenAGuestDisplaySessionEndsWindowsMovedOntoItGoHome() throws {
