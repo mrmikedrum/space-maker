@@ -46,9 +46,9 @@ struct ShimSmokeTests {
         #expect(result.text == "Space Maker isn't running.")
     }
 
-    /// Unix socket paths are capped at 104 bytes, so keep it short.
-    static func temporarySocketPath() -> String {
-        FileManager.default.temporaryDirectory.appendingPathComponent("sm-\(UUID().uuidString.prefix(8)).sock").path
+    /// In a folder of its own, which the server makes owner-only. Unix socket paths are capped at 104 bytes, so keep it short.
+    nonisolated static func temporarySocketPath() -> String {
+        FileManager.default.temporaryDirectory.appendingPathComponent("sm-\(UUID().uuidString.prefix(8))/c.sock").path
     }
 }
 
