@@ -212,7 +212,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
   - an unknown Display Setup suppressing Restore;
   - hand-editing and reloading the Layout file.
 - **Real macOS adapter:** not unit tested. The **Doctor is its test suite**, run live on the user's Mac.
-- **MCP shim and menu bar:** each gets a single smoke test (a round-trip of a command through the socket). They contain no logic to test.
+- **MCP shim and menu bar:** thin adapters with no logic of their own, so they get smoke tests only. The shim's smoke tests send a command over the socket and back, plus relay robustness tests. The menu bar runs inside the app and never uses the socket (ADR 0002), so its smoke test checks that a menu action issues the right engine command.
 - **Prior art:** none; this is a greenfield repo. Use Swift Testing.
 
 ## Out of Scope
