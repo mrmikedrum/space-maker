@@ -5,7 +5,7 @@ import Foundation
 /// The Doctor as Space Maker ships it: real checks against this Mac.
 @MainActor
 public enum StandardDoctor {
-    static let symbolsTitle = "Private SkyLight symbols"
+    static let symbolsTitle = "Private macOS symbols"
     static let liveMoveTitle = "Live move test"
     /// Pins depend on this check: when it doesn't pass, Pins are disabled.
     public static let screenCaptureTitle = "Screen capture"
@@ -91,16 +91,21 @@ public enum StandardDoctor {
     }
 
     static func symbols(_ skyLight: SkyLight) -> CheckOutcome {
+        let accessibility = [
+            (PrivateAccessibility.windowIDSymbol, PrivateAccessibility.canMapWindows),
+            (PrivateAccessibility.remoteTokenSymbol, PrivateAccessibility.canReachHiddenWindows),
+        ]
         let details = skyLight.symbols.map { "\($0.isPresent ? "found" : "MISSING"): `\($0.name)`" }
-        let missing = skyLight.missingSymbols
+            + accessibility.map { "\($0.1 ? "found" : "MISSING"): `\($0.0)` (Accessibility)" }
+        let missing = skyLight.missingSymbols + accessibility.filter { !$0.1 }.map(\.0)
         guard missing.isEmpty else {
             return CheckOutcome(
                 .fail(suspectedCause: "This macOS build renamed or removed private SkyLight API that Space Maker relies on. Compare against the current yabai source to find the replacement."),
-                summary: "\(missing.count) of \(skyLight.symbols.count) missing.",
+                summary: "\(missing.count) of \(details.count) missing.",
                 details: details
             )
         }
-        return CheckOutcome(.pass, summary: "All \(skyLight.symbols.count) found.", details: details)
+        return CheckOutcome(.pass, summary: "All \(details.count) found.", details: details)
     }
 
     static func enumeration(_ skyLight: SkyLight) -> CheckOutcome {

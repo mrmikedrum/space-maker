@@ -474,9 +474,11 @@ extension Engine {
         CommandReply(text: "No window has the handle “\(handle)”. Handles come from status.", isError: true)
     }
 
-    /// What a fullscreen window's place is called when first Saved, such as "Work fullscreen".
+    /// What a fullscreen window's place is called when first Saved: after its Chrome profile ("Work fullscreen"),
+    /// else its name ("Game main fullscreen"), else its app.
     static func fullscreenPlaceName(of window: WindowSystemWindow) -> String {
         if case .known(let profile) = window.chromeProfile { return "\(profile) fullscreen" }
+        if let name = window.name { return "\(name) fullscreen" }
         return "\(window.appName) fullscreen"
     }
 

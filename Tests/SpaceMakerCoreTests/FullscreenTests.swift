@@ -39,6 +39,15 @@ struct FullscreenTests {
         #expect(layout.assignments.filter(\.window.isFullscreen).allSatisfy { $0.frames.isEmpty })  // fullscreen fills the display
     }
 
+    @Test func aFullscreenWindowWhoseProfileCantBeReadNamesItsPlaceAfterTheWindow() throws {
+        world.displays = [.builtIn(desktops: [.regular(11, current: true), .fullscreen(901)])]
+        world.windows = [.chrome(601, profile: .unknown, title: "Game main", desktop: 901, fullscreen: true, name: "Game main")]
+
+        try engine().run("save")
+
+        #expect(try savedLayout().displaySetups[0].arrangement[0].order.contains("Game main fullscreen"))
+    }
+
     @Test func restorePutsAWindowTakenOutOfFullscreenBackInItsPlace() throws {
         laptopAlone()
         let engine = engine()
