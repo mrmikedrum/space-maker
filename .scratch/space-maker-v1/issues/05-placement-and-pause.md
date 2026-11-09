@@ -6,11 +6,11 @@ The headline demo: the user quits Chrome and relaunches it, and every tracked Ch
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Engine tests against the fake cover: a Chrome relaunch that drops every window on the current desktop ends with each window on its Space; a window with no Assignment that appears is left alone; nothing moves while paused; behaviour resumes after resume.
 - [x] Placement never fights the user. A window the user moves after it was placed is not moved back automatically.
-- [ ] Demo on the real Mac: quit and relaunch Chrome. All tracked windows go home. (Pending live demo.)
+- [x] Demo on the real Mac: quit and relaunch Chrome. All tracked windows go home.
 
 ## Comments
 
@@ -20,3 +20,4 @@ The headline demo: the user quits Chrome and relaunches it, and every tracked Ch
 - **Adapter** (`MacOS/WindowAppearanceObserver.swift`): an `AXObserver` per regular app for `kAXWindowCreatedNotification` (announced after 0.5 s so SkyLight lists the window), plus sweeps of a newly launched app's windows at 1/3/6 s, since Chrome can restore windows before its observer exists. Observers are added lazily on launch/activation, so a later Accessibility grant is picked up. Pending live demo.
 - The menu bar now refreshes on every port event (`Engine.onChange`), but keeps the 5 s Drift poll: there is still no event for a window the user moves between desktops.
 
+**Resolution:** Verified live 2026-11-09: quitting and relaunching Chrome put every tracked window back on its Space.

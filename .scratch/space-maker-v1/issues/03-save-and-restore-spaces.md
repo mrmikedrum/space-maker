@@ -8,13 +8,13 @@ MCP gains `save`, `restore`, `move_window` (with an optional save) and `rename_s
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] The Layout is one versioned, readable JSON file, written atomically and watched for hand edits.
 - [x] Engine tests against the fake cover: Save → move → Restore round trips; Restore one; windows without an Assignment left alone; a new desktop auto-named on Save; rename; a desktop deleted and then Saved, which removes it from the Arrangement; a hand edit reloaded.
 - [x] No tool accepts numeric coordinates. Windows are referred to by handles from `status`.
 - [x] If the Doctor's move check fails, Restore and `move_window` are disabled and report why. Everything else keeps working.
-- [ ] Demo on the real Mac: move two windows to other desktops by hand, then Restore all. Both return. (pending live demo)
+- [x] Demo on the real Mac: move two windows to other desktops by hand, then Restore all. Both return.
 
 ## Comments
 
@@ -25,3 +25,5 @@ MCP gains `save`, `restore`, `move_window` (with an optional save) and `rename_s
 - Deferred to their tickets: frames (09), fullscreen windows (10, skipped by Save/Restore/move_window), Display Setups beyond the built-in display (07), Chrome identity (04).
 - `Engine.init` now requires `layoutURL` so tests never read the user's real Layout.
 - Real-Mac demo: pending live demo (user away).
+
+**Resolution:** Verified live 2026-11-09: windows moved to other Spaces showed as Drift and Restore all returned them.

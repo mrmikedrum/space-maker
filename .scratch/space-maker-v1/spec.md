@@ -1,6 +1,6 @@
 # Space Maker v1
 
-Status: ready-for-agent
+Status: resolved
 
 Vocabulary: `GLOSSARY.md`. Decisions: `docs/adr/0001`–`0003`.
 

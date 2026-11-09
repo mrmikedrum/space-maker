@@ -8,14 +8,14 @@ This ticket introduces the engine, the `WindowSystem` port with its real macOS a
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Engine tests run against the fake `WindowSystem` and pass. They assert `status` output only.
 - [x] One smoke test: a command makes a round trip through the socket to the shim.
 - [x] When the app isn't running, the MCP shim returns "Space Maker isn't running".
-- [ ] The app is menu-bar-only (no Dock icon) and registered to launch at login. (Pending live demo: `LSUIElement` and `SMAppService.mainApp.register()` are in place, not yet observed on the real Mac.)
+- [x] The app is menu-bar-only (no Dock icon) and registered to launch at login.` are in place, not yet observed on the real Mac.)
 - [x] If the Chrome profile can't be read, it is reported as unknown and recorded as a Doctor finding.
-- [ ] `status` against the user's real Mac matches what Mission Control shows. (Pending live demo.)
+- [x] `status` against the user's real Mac matches what Mission Control shows.
 
 ## Comments
 
@@ -28,3 +28,5 @@ Not yet seen on the real Mac (user away), so these need the live demo:
 - "Open Layout File" reveals `~/.config/space-maker/` until ticket 03 writes `layout.json`.
 
 **2026-11-09, live testing:** the "red icon" described above was replaced by an untinted warning template symbol, so the icon follows the menu bar's light or dark appearance. Spec updated to match.
+
+**Resolution:** Verified live 2026-11-09: menu-bar-only app and `status` matching Mission Control (after filtering Chrome's untitled helper windows). Launch at login is registered but wasn't observed across a login.

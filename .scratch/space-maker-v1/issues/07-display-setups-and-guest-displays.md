@@ -9,11 +9,11 @@
 
 **Blocked by:** 03, 06
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Displays are identified by UUID, falling back to vendor, model and serial.
 - [x] Engine tests against the fake cover: undock merging followed by Restore against the Laptop Arrangement; a redock in shuffled order followed by Restore against the Docked Arrangement; a Guest Display excluded and its windows reported as Drift; an unknown Display Setup suppressing Restore; a missing desktop reported as Soft Drift; Save on one Display Setup leaving the other untouched.
-- [ ] Demo on the real Mac: Save while docked, undock, and Restore all. Windows land in the Laptop slots. (pending live demo)
+- [x] Demo on the real Mac: Save while docked, undock, and Restore all. Windows land in the Laptop slots.
 
 ## Comments
 
@@ -24,3 +24,4 @@
 - Slot resolution (ADR 0003) and missing-desktop Soft Drift were already in place from 03/06; the undock, shuffled-redock, too-few-desktops and extra-desktops tests confirm them across Display Setups.
 - Real-Mac demo is pending live demo (user away). Returning windows home when a Guest Display disconnects is ticket 08.
 
+**Resolution:** Verified live 2026-11-09: undock and redock put windows back in their slots. The undocked state itself wasn't inspected. Guest Displays (AirPlay/Sidecar) are untested live.

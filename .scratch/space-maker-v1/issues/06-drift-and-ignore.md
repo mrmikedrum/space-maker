@@ -12,11 +12,11 @@ This ticket also adds Soft Drift: Drift that Space Maker can't fix. Soft Drift i
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Engine tests against the fake cover: moved and new windows show as Drift; per-window Ignore ends when the window closes; app Ignore persists across reloads; panels and dialogs are excluded; a failed Restore action becomes Soft Drift and is not retried until the world changes.
-- [ ] The menu bar shows a warning symbol when the Doctor fails, shows the dot when there is Drift, and is plain otherwise. The warning takes precedence over the dot.
-- [ ] Demo: open a new window. It appears as "new" in the menu. Ignore removes it.
+- [x] The menu bar shows a warning symbol when the Doctor fails, shows the dot when there is Drift, and is plain otherwise. The warning takes precedence over the dot.
+- [x] Demo: open a new window. It appears as "new" in the menu. Ignore removes it.
 
 ## Comments
 
@@ -27,3 +27,5 @@ This ticket also adds Soft Drift: Drift that Space Maker can't fix. Soft Drift i
 - Menu bar: red on Doctor failure, else `●N` for Drift, else plain; menu rebuilt on open with Drift (Restore / Save Where It Is / Ignore This Window / Always Ignore App) and Soft Drift with hints. Drift is polled every 5 s until window events exist. Implemented and builds; the icon/menu criterion and the demo are pending live demo (user away).
 
 **2026-11-09, live testing:** the "red icon" described above was replaced by an untinted warning template symbol, so the icon follows the menu bar's light or dark appearance. Spec updated to match.
+
+**Resolution:** Verified live 2026-11-09: new windows show as Drift; Ignore removed a Spotify window; the icon follows the menu bar's appearance.

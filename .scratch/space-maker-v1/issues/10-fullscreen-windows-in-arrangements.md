@@ -8,10 +8,10 @@ If a window is on the right display but in the wrong order (including one that s
 
 **Blocked by:** 07, 06
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Engine tests against the fake cover: undock and redock end with Work main and Game main fullscreen on the right display; a window already correct is never re-fullscreened; an order the fake can't achieve becomes Soft Drift; Restore doesn't loop.
-- [ ] Demo on the real Mac: take Game main out of fullscreen, then Restore all. It goes back to fullscreen on the laptop display. (pending live demo)
+- [x] Demo on the real Mac: take Game main out of fullscreen, then Restore all. It goes back to fullscreen on the laptop display.
 
 ## Comments
 
@@ -23,3 +23,5 @@ If a window is on the right display but in the wrong order (including one that s
 - `save` by handle and `move_window` still refuse fullscreen windows, now with a reason instead of "yet".
 - After merging 09: fullscreen windows get no saved position (they fill the display); Placement (05) still skips fullscreen windows, since Chrome restores them to fullscreen itself.
 - Live on macOS 15.4.1: entering fullscreen (by Accessibility or Ctrl-Cmd-F, whichever desktop is showing) appends the new fullscreen desktop at the end of the display. The fake now does the same, and the adapter no longer focuses the window first (that only jumped the view). Restore and Placement now keep the relative order of a display's fullscreen windows: the longest start of the display's fullscreen order already right on screen stays, and every later fullscreen window of that display is put back (or cycled out and in) in Arrangement order. This happens only on a display where a window actually goes back into fullscreen; a hand-dragged order is still Soft Drift and left alone. A place before or between Spaces still lands after the Spaces (Soft Drift, "drag it in Mission Control"). Restoring one window by handle cycles the same way as Placement. `FullscreenTests`: 15 tests.
+
+**Resolution:** Verified live 2026-11-09: Game main taken out of fullscreen came back fullscreen, and Restore rebuilt the fullscreen order (TickTick, Game, Work). Game can't precede TickTick; that stays Soft Drift.

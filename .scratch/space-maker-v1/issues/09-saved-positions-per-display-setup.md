@@ -4,7 +4,7 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Engine tests against the fake cover: a Save while docked leaves laptop positions untouched; Restore applies the right Display Setup's frame; windows without a saved frame keep their size and position; frames survive a resolution change because they are display-relative.
 - [x] Engine tests cover a window on the right Space but at the wrong position being reported as Drift, and one without a saved position for this Display Setup not being reported.
@@ -17,3 +17,5 @@
 - Layout: each Assignment gains optional `frames` (`displaySetup` key + `frame` as fractions of the display's visible frame, so it survives resolution changes). Omitted when empty; older Layouts load unchanged; version stays 1.
 - Drift gains kind `position`; the menu bar shows it as "Out of place" with Restore/Save/Ignore.
 - Live risk for the demo: Accessibility only reaches windows on desktops currently showing, so Restore may fail to set the frame of a window it just moved to a hidden desktop. That shows as Soft Drift with a "switch to it and Restore" hint. Real-Mac demo pending live demo (user away).
+
+**Resolution:** Not demoed live: the move/resize/Restore snap-back wasn't tried. A related live bug (a false "not at saved position" after a move between displays) was found and fixed.

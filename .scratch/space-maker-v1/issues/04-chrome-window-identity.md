@@ -10,12 +10,12 @@ When those keys are ambiguous, Save names the Chrome window automatically throug
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Engine tests against the fake cover: two same-profile normal windows get auto-named on Save; a relaunch with fresh handles still matches every window; profile plus the fullscreen flag tells windows apart without any name; named and unnamed windows are pruned correctly.
 - [x] Save requests Automation permission for Chrome. If it's denied, auto-naming is skipped, Save still succeeds, and a Doctor finding records why. (Engine side tested against the fake; the real prompt and the "Chrome Automation" Doctor check are pending live demo.)
 - [x] Apps other than Chrome fall back to matching on app plus title.
-- [ ] Demo: `status` on the real Mac shows each Chrome window with its profile and its Assignment. (pending live demo)
+- [x] Demo: `status` on the real Mac shows each Chrome window with its profile and its Assignment.
 
 ## Comments
 
@@ -33,3 +33,5 @@ When those keys are ambiguous, Save names the Chrome window automatically throug
 - Tests: 7 new in `ChromeIdentityTests` (30 total).
 
 **2026-11-09, live testing:** Chrome shows only a "Work" badge on a managed (Google Workspace) profile's button, which matched a profile literally named "Work" and swapped the user's Work and Game windows. The badge now means "unknown profile", the Doctor lists the toolbar text it saw, and Save names every Chrome window it tracks, so names are the identity. Verified live: all four Chrome windows named and restored after a Chrome relaunch.
+
+**Resolution:** Verified live 2026-11-09: `status` shows all four Chrome windows with their names and Assignments.
