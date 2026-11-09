@@ -128,10 +128,11 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let label = switch drift.kind {
         case .new: "New: \(drift.app) “\(drift.title)”"
         case .moved: "Moved: \(drift.app) “\(drift.title)” (belongs on \(drift.space ?? "?"))"
+        case .position: "Out of place: \(drift.app) “\(drift.title)” (away from its saved position)"
         }
         let item = NSMenuItem(title: label, action: nil, keyEquivalent: "")
         let actions = NSMenu()
-        if drift.kind == .moved {
+        if drift.kind != .new {
             actions.addItem(windowItem("Restore", #selector(restoreWindowClicked), drift.handle))
         }
         actions.addItem(windowItem("Save Where It Is", #selector(saveWindowClicked), drift.handle))

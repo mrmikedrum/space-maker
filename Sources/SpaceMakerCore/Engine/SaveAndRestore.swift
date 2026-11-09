@@ -143,14 +143,18 @@ extension Engine {
             for window in windows where !window.isFullscreen {
                 guard let space = window.desktopID.flatMap({ namesByDesktop[$0] }) else { continue }
                 var identity = Self.identity(of: window)
+                var frames: [SavedFrame] = []
                 if let old = matches[window.id] {
                     resaved.insert(old)
                     // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
                     if identity.isChrome, identity.chromeProfile == nil {
                         identity.chromeProfile = layout.assignments[old].window.chromeProfile
                     }
+                    frames = layout.assignments[old].frames  // other Display Setups' positions are kept
                 }
-                assignments.append(Assignment(window: identity, space: space))
+                var assignment = Assignment(window: identity, space: space, frames: frames)
+                if let frame = Self.relativeFrame(of: window, in: displays) { assignment.setFrame(frame, in: setupKey) }
+                assignments.append(assignment)
                 saved += 1
             }
             let live = Set(matches.values)
@@ -181,21 +185,26 @@ extension Engine {
             guard let space = window.desktopID.flatMap({ spaceNamesByDesktop(displays)[$0] }) else {
                 return CommandReply(text: "\(handle) isn't on a Space. Save everything to make its desktop a Space.", isError: true)
             }
-            assign(window, to: space)
+            assign(window, to: space, frame: Self.relativeFrame(of: window, in: knownDisplays(displays)), in: displaySetupKey(displays))
             return committing("Saved \(handle) (\(window.appName) “\(window.title)”) on \(space).")
         }
     }
 
-    /// Replaces the window's Assignment, if it has one, with one for `space`.
-    func assign(_ window: WindowSystemWindow, to space: String) {
+    /// Replaces the window's Assignment, if it has one, with one for `space`, keeping its saved positions.
+    /// `frame`, if given, becomes its position in the Display Setup `displaySetup`.
+    func assign(_ window: WindowSystemWindow, to space: String, frame: RelativeFrame? = nil, in displaySetup: [String] = []) {
         var identity = Self.identity(of: window)
+        var frames: [SavedFrame] = []
         let windows = windowSystem.readWindows().filter(\.isStandard)
         if let old = Self.match(windows, to: layout.assignments)[window.id] {
             // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
             if identity.isChrome, identity.chromeProfile == nil { identity.chromeProfile = layout.assignments[old].window.chromeProfile }
+            frames = layout.assignments[old].frames
             layout.assignments.remove(at: old)
         }
-        layout.assignments.append(Assignment(window: identity, space: space))
+        var assignment = Assignment(window: identity, space: space, frames: frames)
+        if let frame { assignment.setFrame(frame, in: displaySetup) }
+        layout.assignments.append(assignment)
         layout.assignments.sort { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
     }
 
@@ -210,6 +219,7 @@ extension Engine {
             let windows = windowSystem.readWindows().filter(\.isStandard)
             let matches = Self.match(windows, to: layout.assignments)
             let spaceOf = { (window: WindowSystemWindow) in matches[window.id].map { self.layout.assignments[$0].space } }
+            let known = knownDisplays(displays)
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
             defer { rememberWorldForSoftDrift() }
 
@@ -232,19 +242,34 @@ extension Engine {
                     problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")
                     continue
                 }
-                if window.desktopID == target { continue }
+                let frame = matches[window.id].flatMap { savedFrame(of: layout.assignments[$0], on: target, displays: known) }
+                let needsMove = window.desktopID != target
+                // Only a window moved to another display might have moved on screen; otherwise its read frame is current.
+                let needsFrame = frame.map { (needsMove && Self.visibleFrame(ofDisplayWith: window.desktopID, in: known) !=
+                    Self.visibleFrame(ofDisplayWith: target, in: known)) || !Self.isAt(window.frame, $0) } ?? false
+                if !needsMove && !needsFrame { continue }
                 // Soft Drift: a move that already failed isn't retried until the world changes, unless asked for by handle.
-                if handle == nil, failedMoves.contains(window.id) {
+                if handle == nil, failedMoves.contains(window.id) || failedFrames.contains(window.id) {
                     notRetried.append(label)
                     continue
                 }
-                if windowSystem.moveWindow(window.id, toDesktop: target) {
-                    moved.append("\(label) → \(space)")
+                if needsMove {
+                    guard windowSystem.moveWindow(window.id, toDesktop: target) else {
+                        problems.append("\(label): macOS didn't move it to \(space).")
+                        failedMoves.insert(window.id)
+                        continue
+                    }
                     failedMoves.remove(window.id)
-                } else {
-                    problems.append("\(label): macOS didn't move it to \(space).")
-                    failedMoves.insert(window.id)
                 }
+                if needsFrame, let frame {
+                    guard windowSystem.setFrame(window.id, to: frame) else {
+                        problems.append("\(label): macOS didn't put it back at its saved position.")
+                        failedFrames.insert(window.id)
+                        continue
+                    }
+                    failedFrames.remove(window.id)
+                }
+                moved.append(needsMove ? "\(label) → \(space)" : "\(label) → its saved position")
             }
 
             var lines = [moved.isEmpty ? "Everything was already on its Space." : "Moved \(moved.count) window\(moved.count == 1 ? "" : "s"):"]

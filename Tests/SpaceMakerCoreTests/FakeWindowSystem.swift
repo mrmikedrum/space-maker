@@ -110,6 +110,21 @@ final class FakeWindowSystem: WindowSystem {
         }
     }
 
+    /// Windows macOS won't resize or reposition.
+    var unresizableWindows: Set<UInt32> = []
+
+    /// The user drags or resizes a window by hand.
+    func place(_ windowID: UInt32, at frame: WindowFrame) {
+        guard let index = windows.firstIndex(where: { $0.id == windowID }) else { return }
+        windows[index].frame = frame
+    }
+
+    func setFrame(_ windowID: UInt32, to frame: WindowFrame) -> Bool {
+        guard !unresizableWindows.contains(windowID), let index = windows.firstIndex(where: { $0.id == windowID }) else { return false }
+        windows[index].frame = frame
+        return true
+    }
+
     func desktop(of windowID: UInt32) -> UInt64? {
         windows.first { $0.id == windowID }?.desktopID
     }
@@ -144,12 +159,17 @@ final class FakeWindowSystem: WindowSystem {
 }
 
 extension WindowSystemDisplay {
-    static func builtIn(desktops: [WindowSystemDesktop]) -> Self {
-        Self(id: "built-in", name: "Built-in Retina Display", isBuiltIn: true, desktops: desktops)
+    /// A 1512×982 laptop screen with a 25-point menu bar and the Dock hidden.
+    static func builtIn(desktops: [WindowSystemDesktop], visibleFrame: WindowFrame = WindowFrame(x: 0, y: 25, width: 1512, height: 957)) -> Self {
+        Self(id: "built-in", name: "Built-in Retina Display", isBuiltIn: true, desktops: desktops, visibleFrame: visibleFrame)
     }
 
-    static func external(_ id: String, hardwareID: String? = nil, name: String, desktops: [WindowSystemDesktop]) -> Self {
-        Self(id: id, hardwareID: hardwareID, name: name, isBuiltIn: false, desktops: desktops)
+    /// By default a 2560×1440 monitor to the right of the laptop.
+    static func external(
+        _ id: String, hardwareID: String? = nil, name: String, desktops: [WindowSystemDesktop],
+        visibleFrame: WindowFrame = WindowFrame(x: 1512, y: 25, width: 2560, height: 1415)
+    ) -> Self {
+        Self(id: id, hardwareID: hardwareID, name: name, isBuiltIn: false, desktops: desktops, visibleFrame: visibleFrame)
     }
 }
 
@@ -169,11 +189,12 @@ extension WindowSystemWindow {
         fullscreen: Bool = false,
         chromeProfile: ChromeProfile = .notChrome,
         isStandard: Bool = true,
-        name: String? = nil
+        name: String? = nil,
+        frame: WindowFrame? = nil
     ) -> Self {
         Self(
             id: id, bundleID: bundleID, appName: appName, title: name ?? title, desktopID: desktop,
-            isFullscreen: fullscreen, chromeProfile: chromeProfile, isStandard: isStandard, name: name
+            isFullscreen: fullscreen, chromeProfile: chromeProfile, isStandard: isStandard, name: name, frame: frame
         )
     }
 

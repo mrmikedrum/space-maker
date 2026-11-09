@@ -28,6 +28,8 @@ public final class Engine {
 
     /// Windows Restore couldn't move: Soft Drift until `softDriftWorld` changes.
     var failedMoves: Set<UInt32> = []
+    /// Windows Restore couldn't put at their saved position: Soft Drift until `softDriftWorld` changes.
+    var failedFrames: Set<UInt32> = []
     /// The world as it was when Soft Drift was last recorded.
     var softDriftWorld: WorldSnapshot?
 
