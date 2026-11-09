@@ -14,6 +14,7 @@ public final class MacWindowSystem: WindowSystem {
     public var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
     var mirrors: [UInt32: PinMirror] = [:]
     private var activeSpaceObserver: NSObjectProtocol?
+    private var appearanceObserver: WindowAppearanceObserver?
 
     /// Where each Chrome window's profile came from on the last read, for the Doctor.
     public enum ChromeProfileSource: Sendable {
@@ -39,6 +40,9 @@ public final class MacWindowSystem: WindowSystem {
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.onEvent?(.activeSpaceChanged) }
+        }
+        appearanceObserver = WindowAppearanceObserver { [weak self] windowID in
+            self?.onEvent?(.windowAppeared(windowID))
         }
     }
 

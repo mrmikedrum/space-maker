@@ -147,14 +147,29 @@ final class FakeWindowSystem: WindowSystem {
         return .named
     }
 
-    /// Quits and relaunches Chrome as macOS 15 does: session restore brings every window back,
+    /// Quits and relaunches Chrome as macOS 15 does: session restore brings every window back one at a time,
     /// names included, with fresh window IDs (`id + offset`) and every normal window on the current desktop.
+    /// Each window announces itself as it appears.
     func relaunchChrome(idOffset: UInt32 = 1000) {
         let current = displays.flatMap(\.desktops).first(where: \.isCurrent)?.id
-        for index in windows.indices where windows[index].chromeProfile != .notChrome {
-            windows[index].id += idOffset
-            if !windows[index].isFullscreen { windows[index].desktopID = current }
+        let chrome = windows.filter { $0.chromeProfile != .notChrome }
+        windows.removeAll { $0.chromeProfile != .notChrome }
+        for var window in chrome {
+            window.id += idOffset
+            if !window.isFullscreen { window.desktopID = current }
+            openWindow(window)
         }
+    }
+
+    /// A window appears, as when the user opens one or an app launches.
+    func openWindow(_ window: WindowSystemWindow) {
+        windows.append(window)
+        onEvent?(.windowAppeared(window.id))
+    }
+
+    /// macOS reports a window it already reported as appearing again, as when its app is unhidden.
+    func announceAgain(_ windowID: UInt32) {
+        onEvent?(.windowAppeared(windowID))
     }
 }
 

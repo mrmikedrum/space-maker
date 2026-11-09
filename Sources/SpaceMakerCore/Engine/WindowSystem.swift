@@ -49,6 +49,8 @@ public enum WindowSystemEvent: Equatable, Sendable {
     case activeSpaceChanged
     /// The user clicked the Pin mirror of this window (a click, not a drag).
     case pinClicked(UInt32)
+    /// A window appeared: newly opened, or brought back by an app that relaunched.
+    case windowAppeared(UInt32)
     /// The window closed.
     case windowClosed(UInt32)
 }
