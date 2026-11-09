@@ -2,7 +2,7 @@
 
 **What to build:** The user adds the Space Maker MCP server to Claude Code, calls `status`, and sees their real displays, desktops (regular and fullscreen, in order) and windows. Each window has a short handle, its app, its Chrome profile when one can be read, a fullscreen flag, a title, and its current desktop. `doctor` also works over MCP.
 
-The menu bar app launches at login, has Doctor and "Open Layout file" items, and its icon turns red when the Doctor fails.
+The menu bar app launches at login, has Doctor and "Open Layout file" items, and its icon shows a warning symbol when the Doctor fails (superseded "turns red" during live testing: a tinted icon stopped following the menu bar's appearance).
 
 This ticket introduces the engine, the `WindowSystem` port with its real macOS adapter and a fake, the Unix-socket command relay, and the stateless stdio MCP shim (ADR 0002). Until ticket 07, every display other than the built-in one is reported as a Guest Display.
 
@@ -27,3 +27,4 @@ Not yet seen on the real Mac (user away), so these need the live demo:
 - Windows on desktops Accessibility can't reach are assumed standard, so a hidden-desktop panel may show up in `status`.
 - "Open Layout File" reveals `~/.config/space-maker/` until ticket 03 writes `layout.json`.
 
+**2026-11-09, live testing:** the "red icon" described above was replaced by an untinted warning template symbol, so the icon follows the menu bar's light or dark appearance. Spec updated to match.

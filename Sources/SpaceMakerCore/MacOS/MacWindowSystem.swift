@@ -175,7 +175,7 @@ public final class MacWindowSystem: WindowSystem {
 
         var accessibilityByPID: [pid_t: [UInt32: AccessibilityWindow]] = [:]
         var windows: [WindowSystemWindow] = []
-        var chromeScriptWindows: [ChromeScripting.ScriptWindow]?
+        var chromeScriptWindows: [ChromeScripting.ScriptWindow]??
         var profileSources: [UInt32: ChromeProfileSource] = [:]
         var chromeFrames: [UInt32: (title: String, bounds: CGRect)] = [:]
         for info in infos {
@@ -204,9 +204,13 @@ public final class MacWindowSystem: WindowSystem {
                 if let known = chromeNames[windowID], known.title == title, known.bounds == bounds {
                     name = known.name
                 } else {
-                    if chromeScriptWindows == nil { chromeScriptWindows = ChromeScripting.windows() ?? [] }
-                    name = chromeScriptWindows?.first { $0.title == title && $0.bounds == bounds }?.givenName
-                    chromeNames[windowID] = (title, bounds, name)
+                    if chromeScriptWindows == nil { chromeScriptWindows = .some(ChromeScripting.windows()) }
+                    // Only a window Chrome actually reported is remembered: a failed query (no Automation permission
+                    // yet, Chrome busy) or a miss is asked again next time rather than taken as "unnamed".
+                    if let match = (chromeScriptWindows ?? nil)?.first(where: { $0.title == title && $0.bounds == bounds }) {
+                        name = match.givenName
+                        chromeNames[windowID] = (title, bounds, name)
+                    }
                 }
             }
 
@@ -226,7 +230,10 @@ public final class MacWindowSystem: WindowSystem {
         }
         chromeProfileSources = profileSources
         chromeWindowFrames = chromeFrames
+        // Facts about a window last only as long as it does, so a reused window ID never inherits them.
         rememberedProfiles = rememberedProfiles.filter { profileSources[$0.key] != nil }
+        badgedWindows = badgedWindows.filter { profileSources[$0] != nil }
+        chromeNames = chromeNames.filter { profileSources[$0.key] != nil }
         return windows
     }
 

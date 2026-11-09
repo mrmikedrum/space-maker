@@ -49,7 +49,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
 ### Window identity
 14. As the user, I want each window to have its own Assignment, even when an app has several windows, so that my four Chrome windows can each live somewhere different.
 15. As the user, I want Chrome windows recognized by profile and by whether they're fullscreen, so that "the Work fullscreen window" and "the Work normal window" are understood without extra effort from me.
-16. As the user, I want Space Maker to name Chrome windows automatically when profile and fullscreen aren't enough to tell them apart, so that their identity survives a relaunch without me naming them.
+16. As the user, I want Space Maker to name every Chrome window it Saves automatically, so that its identity survives a relaunch without me naming it, even when its profile can't be read.
 17. As the user, I want to name a window through MCP, so that I can give a window a meaningful name if I want to.
 18. As the user, I want unnamed windows that have closed to be dropped from the Layout on my next Save, so that stale temporary windows don't pile up.
 19. As the user, I want named windows to stay in the Layout even while they're closed, so that they find their place when they reopen.
@@ -142,8 +142,8 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
   - **Space switching:** synthetic input.
   - **Failures:** every symbol lookup can fail independently and reports through the Doctor.
 - **Window identity:**
-  - **Match keys:** app bundle ID, plus (for Chrome) profile, plus the fullscreen flag. A name breaks ties.
-  - **Auto-naming:** Save auto-names Chrome windows only when the other keys are ambiguous. For apps other than Chrome, the title is used as a best-effort tiebreaker.
+  - **Match keys:** app bundle ID, plus (for Chrome) profile when it can be read, plus the fullscreen flag, plus the window's name when it has one.
+  - **Auto-naming:** Save names every Chrome window it assigns that has no name yet. Profiles can only be read on visible desktops, and a managed (Workspace) profile's button shows only Chrome's "Work" badge, so the name is the durable identity (found live, 2026-11-09). For apps other than Chrome, the title is used as a best-effort tiebreaker.
   - **Unmatched windows:** a window that is an extra of its kind and unnamed matches nothing and counts as "new" Drift.
   - **Handles:** short, stable for as long as the window lives, and issued by the engine.
 - **Layout schema:** one versioned JSON file in `~/.config/space-maker/`. It contains:

@@ -2,7 +2,7 @@
 
 **What to build:** The user's Chrome windows (Work main fullscreen, Work second, Game main fullscreen, Personal main) each get their own stable Assignment.
 
-Windows are matched by app, Chrome profile and whether they're fullscreen. A name is used only as a tiebreaker.
+Windows are matched by app, Chrome profile and whether they're fullscreen, plus the window's name. (Superseded during live testing: Save now names every Chrome window, since profiles can't be read on hidden desktops or for managed profiles. See Comments.)
 
 When those keys are ambiguous, Save names the Chrome window automatically through Chrome's scripting interface. The name survives a Chrome relaunch.
 
@@ -32,3 +32,4 @@ When those keys are ambiguous, Save names the Chrome window automatically throug
   - A new "Chrome Automation" check fails when Automation is denied and is skipped when the user hasn't been asked yet or Chrome isn't running.
 - Tests: 7 new in `ChromeIdentityTests` (30 total).
 
+**2026-11-09, live testing:** Chrome shows only a "Work" badge on a managed (Google Workspace) profile's button, which matched a profile literally named "Work" and swapped the user's Work and Game windows. The badge now means "unknown profile", the Doctor lists the toolbar text it saw, and Save names every Chrome window it tracks, so names are the identity. Verified live: all four Chrome windows named and restored after a Chrome relaunch.

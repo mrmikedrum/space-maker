@@ -263,8 +263,21 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Doctor
 
-    /// Runs the Doctor, turns the icon red if any check failed, and returns the report's location.
+    /// The Doctor run in progress, if any: overlapping requests (launch, menu, MCP) share it rather than racing
+    /// each other's reports and feature switches.
+    private var doctorRun: Task<URL?, Never>?
+
+    /// Runs the Doctor (or joins the run in progress), shows a warning icon if any check failed, and returns
+    /// the report's location.
     private func runDoctor() async -> URL? {
+        if let doctorRun { return await doctorRun.value }
+        let run = Task { await runDoctorOnce() }
+        doctorRun = run
+        defer { doctorRun = nil }
+        return await run.value
+    }
+
+    private func runDoctorOnce() async -> URL? {
         let doctor = Self.makeDoctor(skyLight: skyLight, windowSystem: windowSystem)
         do {
             let results = try await doctor.run()

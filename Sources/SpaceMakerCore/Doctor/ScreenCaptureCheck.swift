@@ -16,15 +16,18 @@ enum ScreenCaptureCheck {
             )
         }
 
-        let result = await withTaskGroup(of: Result?.self) { group in
-            group.addTask { await captureOneWindow() }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(timeout))
-                return nil
+        // A task group would wait for a hung capture even after the timer won, so the two race through a
+        // continuation that resumes once, and a capture that never answers is simply abandoned.
+        let result: Result? = await withCheckedContinuation { continuation in
+            let gate = OnceGate()
+            Task.detached {
+                let captured = await captureOneWindow()
+                if gate.claim() { continuation.resume(returning: captured) }
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+            Task.detached {
+                try? await Task.sleep(for: .seconds(timeout))
+                if gate.claim() { continuation.resume(returning: nil) }
+            }
         }
         guard let result else {
             return CheckOutcome(
@@ -49,6 +52,13 @@ enum ScreenCaptureCheck {
         case captured(String)
         case noWindow
         case failed(String)
+    }
+
+    /// Lets exactly one of several racers through.
+    private final class OnceGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var claimed = false
+        func claim() -> Bool { lock.withLock { defer { claimed = true }; return !claimed } }
     }
 
     private static func captureOneWindow() async -> Result {

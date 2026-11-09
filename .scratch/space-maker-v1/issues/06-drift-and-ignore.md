@@ -26,3 +26,4 @@ This ticket also adds Soft Drift: Drift that Space Maker can't fix. Soft Drift i
 - Soft Drift: a window Restore couldn't move, and a Space this Display Setup's Arrangement has no desktop for. Restore all doesn't retry a failed move until displays, desktops or window places change; Restore by handle always tries.
 - Menu bar: red on Doctor failure, else `●N` for Drift, else plain; menu rebuilt on open with Drift (Restore / Save Where It Is / Ignore This Window / Always Ignore App) and Soft Drift with hints. Drift is polled every 5 s until window events exist. Implemented and builds; the icon/menu criterion and the demo are pending live demo (user away).
 
+**2026-11-09, live testing:** the "red icon" described above was replaced by an untinted warning template symbol, so the icon follows the menu bar's light or dark appearance. Spec updated to match.
