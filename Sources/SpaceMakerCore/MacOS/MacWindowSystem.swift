@@ -187,6 +187,35 @@ public final class MacWindowSystem: WindowSystem {
         return false
     }
 
+    /// How long the fullscreen animation gets to finish before the change counts as failed.
+    private static let fullscreenSettleTimeout: TimeInterval = 3
+
+    /// Sets Accessibility's `AXFullScreen`, then polls until the window sits on a desktop of the new kind.
+    /// Accessibility only reaches windows on visible desktops, so a window on a hidden one can't be changed.
+    public func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool {
+        guard let info = Self.windowInfo(windowID),
+              let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element
+        else { return false }
+        func settled() -> Bool {
+            guard let desktops = skyLight.desktopIDs(forWindow: windowID), desktops.count == 1 else { return false }
+            let kind = (skyLight.displayDesktops() ?? []).lazy.flatMap(\.desktops).first { $0.id == desktops[0] }?.kind
+            return kind == (isFullscreen ? .fullscreen : .regular)
+        }
+        if settled() { return true }
+        guard AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, (isFullscreen ? kCFBooleanTrue : kCFBooleanFalse)) == .success
+        else { return false }
+        let deadline = Date().addingTimeInterval(Self.fullscreenSettleTimeout)
+        repeat {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            if settled() {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.3))  // let the animation finish before the next step
+                return true
+            }
+        } while Date() < deadline
+        return false
+    }
+
     /// Finds the window through Chrome's AppleScript by its title and bounds, since AppleScript window IDs aren't WindowServer IDs.
     public func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult {
         guard let frame = chromeWindowFrames[windowID] else { return .failed("Space Maker hasn't seen that Chrome window.") }

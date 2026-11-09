@@ -88,8 +88,16 @@ extension Engine {
             ))
         }
 
-        for window in windows where !window.isFullscreen && !isIgnored(window) {
+        let places = fullscreenPlaces(displays)
+        for window in windows where !isIgnored(window) {
             let space = matches[window.id].map { layout.assignments[$0].space }
+            if let index = matches[window.id], layout.assignments[index].window.isFullscreen {
+                guard let place = places[layout.assignments[index].space] else { continue }
+                let (moved, soft) = fullscreenDrift(window, place: place, matches: matches, windows: windows)
+                drift += moved.map { [$0] } ?? []
+                softDrift += soft.map { [$0] } ?? []
+                continue
+            }
             if let space {
                 guard let target = desktops[space], window.desktopID != nil, window.desktopID != target else { continue }
                 if failedMoves.contains(window.id) {

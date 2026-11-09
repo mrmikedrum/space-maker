@@ -13,6 +13,11 @@ public protocol WindowSystem: AnyObject {
     /// Moves a window to a native desktop. Returns false if the move didn't land.
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool
 
+    /// Takes a window into or out of fullscreen, returning once macOS has finished. Returns false if it didn't happen.
+    /// Entering fullscreen makes a fullscreen desktop just after the desktop the window was on; leaving it puts the
+    /// window back on a regular desktop of the same display.
+    func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool
+
     /// Sets a Chrome window's name (Chrome's `given name`), which Chrome keeps across a relaunch.
     /// May ask the user for Automation permission.
     func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult

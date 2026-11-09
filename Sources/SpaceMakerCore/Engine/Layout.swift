@@ -69,20 +69,69 @@ public struct DisplaySetupLayout: Codable, Equatable, Sendable {
     }
 }
 
-/// The Spaces on one display, in order: the Nth name is the Nth regular desktop (ADR 0003).
+/// The Spaces and fullscreen windows on one display, in order.
+///
+/// The Nth Space is the Nth regular desktop (ADR 0003). Fullscreen windows sit between them, each after
+/// `spacesBefore` of the display's Spaces; several in the same gap keep their list order.
 public struct DisplayArrangement: Codable, Equatable, Sendable {
     public var display: String
     public var spaces: [String]
+    public var fullscreenWindows: [ArrangedFullscreenWindow]
 
-    public init(display: String, spaces: [String]) {
+    public init(display: String, spaces: [String], fullscreenWindows: [ArrangedFullscreenWindow] = []) {
         self.display = display
         self.spaces = spaces
+        self.fullscreenWindows = fullscreenWindows
+    }
+
+    /// Spaces and fullscreen windows interleaved in on-screen order, such as
+    /// "Game fullscreen, Tasks, Personal, Work, Work fullscreen".
+    public var order: [String] {
+        var result: [String] = []
+        for gap in 0...spaces.count {
+            result += fullscreenWindows.filter { min(max($0.spacesBefore, 0), spaces.count) == gap }.map(\.name)
+            if gap < spaces.count { result.append(spaces[gap]) }
+        }
+        return result
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case display, spaces, fullscreenWindows
+    }
+
+    /// `fullscreenWindows` is missing from Layouts written before fullscreen windows were arranged, and left out when empty.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        display = try container.decode(String.self, forKey: .display)
+        spaces = try container.decode([String].self, forKey: .spaces)
+        fullscreenWindows = try container.decodeIfPresent([ArrangedFullscreenWindow].self, forKey: .fullscreenWindows) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(display, forKey: .display)
+        try container.encode(spaces, forKey: .spaces)
+        if !fullscreenWindows.isEmpty { try container.encode(fullscreenWindows, forKey: .fullscreenWindows) }
+    }
+}
+
+/// A fullscreen window's place in an Arrangement. Its Assignment names the place by `name` (in its `space` field).
+public struct ArrangedFullscreenWindow: Codable, Equatable, Sendable {
+    /// Such as "Work fullscreen". Never the same as a Space's name.
+    public var name: String
+    /// How many of the display's Spaces come before it; 0 puts it before the first.
+    public var spacesBefore: Int
+
+    public init(name: String, spacesBefore: Int) {
+        self.name = name
+        self.spacesBefore = spacesBefore
     }
 }
 
 /// Where a specific window belongs.
 public struct Assignment: Codable, Equatable, Sendable {
     public var window: WindowIdentity
+    /// The Space the window belongs on; for a fullscreen window, the name of its place in the Arrangement.
     public var space: String
 
     public init(window: WindowIdentity, space: String) {

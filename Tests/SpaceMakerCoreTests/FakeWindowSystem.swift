@@ -69,18 +69,58 @@ final class FakeWindowSystem: WindowSystem {
         return true
     }
 
+    /// How many times each window entered or left fullscreen.
+    private(set) var fullscreenChanges: [UInt32: Int] = [:]
+    /// Windows macOS refuses to take in or out of fullscreen.
+    var unfullscreenableWindows: Set<UInt32> = []
+    private var nextFullscreenDesktop: UInt64 = 9001
+
+    /// Like macOS: entering fullscreen makes a fullscreen desktop just after the desktop the window was on;
+    /// leaving it puts the window on the regular desktop just before and removes the fullscreen desktop.
+    func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool {
+        guard !unfullscreenableWindows.contains(windowID),
+              let index = windows.firstIndex(where: { $0.id == windowID }),
+              let desktop = windows[index].desktopID,
+              let display = displays.firstIndex(where: { $0.desktops.contains { $0.id == desktop } }),
+              let slot = displays[display].desktops.firstIndex(where: { $0.id == desktop })
+        else { return false }
+        if windows[index].isFullscreen == isFullscreen { return true }
+        fullscreenChanges[windowID, default: 0] += 1
+        windows[index].isFullscreen = isFullscreen
+        if isFullscreen {
+            let id = nextFullscreenDesktop
+            nextFullscreenDesktop += 1
+            displays[display].desktops.insert(WindowSystemDesktop(id: id, kind: .fullscreen, isCurrent: false), at: slot + 1)
+            windows[index].desktopID = id
+        } else {
+            let desktops = displays[display].desktops
+            let before = desktops[..<slot].last { $0.kind == .regular } ?? desktops.first { $0.kind == .regular }
+            displays[display].desktops.remove(at: slot)
+            windows[index].desktopID = before?.id
+        }
+        return true
+    }
+
+    /// A display's desktops in order: a regular desktop by its ID, a fullscreen one by the window filling it.
+    func order(of displayID: String) -> [String] {
+        (displays.first { $0.id == displayID }?.desktops ?? []).map { desktop in
+            guard desktop.kind == .fullscreen else { return "\(desktop.id)" }
+            return windows.filter { $0.desktopID == desktop.id }.map { "fullscreen \($0.id)" }.joined(separator: ", ")
+        }
+    }
+
     /// The user (or macOS) moves a window by hand.
     func move(_ windowID: UInt32, to desktopID: UInt64) {
         guard let index = windows.firstIndex(where: { $0.id == windowID }) else { return }
         windows[index].desktopID = desktopID
     }
 
-    /// macOS undocking: the display's first desktop collapses into the built-in display's first,
+    /// macOS undocking: the display's first desktop collapses into the built-in display's first regular desktop,
     /// taking its windows with it, and its other desktops are appended to the built-in display.
     func undock(_ displayID: String) {
         guard let index = displays.firstIndex(where: { $0.id == displayID }),
               let builtIn = displays.firstIndex(where: \.isBuiltIn),
-              let laptopFirst = displays[builtIn].desktops.first?.id
+              let laptopFirst = displays[builtIn].desktops.first(where: { $0.kind == .regular })?.id
         else { return }
         let gone = displays.remove(at: index)
         let builtInIndex = displays.firstIndex(where: \.isBuiltIn)!

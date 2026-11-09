@@ -80,6 +80,7 @@ extension Engine {
             var arrangement: [DisplayArrangement] = []
             var newSpaces: [String] = []
             var namesByDesktop: [UInt64: String] = [:]
+            var fullscreenPlaces: [UInt32: String] = [:]  // fullscreen window ID → its place's name
 
             // Name every regular desktop, display by display, keeping existing Spaces where the evidence allows.
             for display in displays {
@@ -119,8 +120,27 @@ extension Engine {
                 }
 
                 let resolved = names.map { $0! }
-                arrangement.append(DisplayArrangement(display: display.id, spaces: resolved))
                 for (desktop, name) in zip(desktops, resolved) { namesByDesktop[desktop.id] = name }
+
+                // Fullscreen windows take their place between the Spaces, keeping the name they were saved with.
+                var arranged: [ArrangedFullscreenWindow] = []
+                var spacesBefore = 0
+                for desktop in display.desktops {
+                    guard desktop.kind == .fullscreen else { spacesBefore += 1; continue }
+                    for window in windows where window.isFullscreen && window.desktopID == desktop.id {
+                        let old = matches[window.id].map { layout.assignments[$0] }
+                        let name: String
+                        if let old, old.window.isFullscreen, !taken.contains(old.space), !layout.spaces.contains(old.space) {
+                            name = old.space
+                        } else {
+                            name = Self.uniqueName(Self.fullscreenPlaceName(of: window), avoiding: taken.union(layout.spaces))
+                        }
+                        taken.insert(name)
+                        fullscreenPlaces[window.id] = name
+                        arranged.append(ArrangedFullscreenWindow(name: name, spacesBefore: spacesBefore))
+                    }
+                }
+                arrangement.append(DisplayArrangement(display: display.id, spaces: resolved, fullscreenWindows: arranged))
             }
 
             // This Display Setup's Arrangement is replaced; other Display Setups are untouched.
@@ -132,7 +152,10 @@ extension Engine {
             let arranged = layout.displaySetups.flatMap { $0.arrangement.flatMap(\.spaces) }
             layout.spaces = layout.spaces.filter(arranged.contains) + arranged.filter { !layout.spaces.contains($0) }.uniqued()
 
-            let saving = Set(windows.filter { !$0.isFullscreen && $0.desktopID.flatMap { namesByDesktop[$0] } != nil }.map(\.id))
+            let placeOf = { (window: WindowSystemWindow) -> String? in
+                window.isFullscreen ? fullscreenPlaces[window.id] : window.desktopID.flatMap { namesByDesktop[$0] }
+            }
+            let saving = Set(windows.filter { placeOf($0) != nil }.map(\.id))
             let namingNotes = autoNameAmbiguousChromeWindows(&windows, saving: saving)
 
             // Every window on a Space gets an Assignment. A live window's old Assignment is kept only if it isn't on a
@@ -140,8 +163,8 @@ extension Engine {
             var assignments: [Assignment] = []
             var saved = 0
             var resaved = Set<Int>()
-            for window in windows where !window.isFullscreen {
-                guard let space = window.desktopID.flatMap({ namesByDesktop[$0] }) else { continue }
+            for window in windows {
+                guard let space = placeOf(window) else { continue }
                 var identity = Self.identity(of: window)
                 if let old = matches[window.id] {
                     resaved.insert(old)
@@ -154,8 +177,9 @@ extension Engine {
                 saved += 1
             }
             let live = Set(matches.values)
+            let places = Set(layout.spaces + layout.displaySetups.flatMap { $0.arrangement.flatMap(\.fullscreenWindows).map(\.name) })
             for (index, assignment) in layout.assignments.enumerated() where !resaved.contains(index) {
-                guard layout.spaces.contains(assignment.space), live.contains(index) || assignment.window.name != nil else { continue }
+                guard places.contains(assignment.space), live.contains(index) || assignment.window.name != nil else { continue }
                 assignments.append(assignment)
             }
             layout.assignments = assignments.sorted { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
@@ -176,7 +200,7 @@ extension Engine {
                 return Self.unknownHandleReply(handle)
             }
             guard !window.isFullscreen else {
-                return CommandReply(text: "\(handle) is fullscreen; Space Maker doesn't save fullscreen windows yet.", isError: true)
+                return CommandReply(text: "\(handle) is fullscreen. A fullscreen window's place is part of the Arrangement, so use Save all to record it.", isError: true)
             }
             guard let space = window.desktopID.flatMap({ spaceNamesByDesktop(displays)[$0] }) else {
                 return CommandReply(text: "\(handle) isn't on a Space. Save everything to make its desktop a Space.", isError: true)
@@ -213,7 +237,8 @@ extension Engine {
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
             defer { rememberWorldForSoftDrift() }
 
-            var targets = windows.filter { !$0.isFullscreen && !isIgnored($0) }
+            let places = fullscreenPlaces(displays)
+            var targets = windows.filter { !isIgnored($0) }
             if let handle {
                 guard let window = window(withHandle: handle, in: windows) else { return Self.unknownHandleReply(handle) }
                 guard spaceOf(window) != nil else {
@@ -228,6 +253,27 @@ extension Engine {
             for window in targets {
                 guard let space = spaceOf(window) else { continue }  // no Assignment: never moved
                 let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
+                if layout.assignments[matches[window.id]!].window.isFullscreen {
+                    guard let place = places[space] else {
+                        problems.append("\(label): “\(space)” has no place in this Display Setup's Arrangement.")
+                        continue
+                    }
+                    if handle == nil, failedMoves.contains(window.id), !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID }) {
+                        notRetried.append(label)
+                        continue
+                    }
+                    switch restoreFullscreen(window, to: place) {
+                    case nil: continue
+                    case true?:
+                        moved.append("\(label) → fullscreen \(place.description)")
+                        failedMoves.remove(window.id)
+                    case false?:
+                        problems.append("\(label): macOS didn't put it back in fullscreen \(place.description).")
+                        failedMoves.insert(window.id)
+                    }
+                    continue
+                }
+                guard !window.isFullscreen else { continue }
                 guard let target = desktops[space] else {
                     problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")
                     continue
@@ -276,7 +322,7 @@ extension Engine {
                 return CommandReply(text: "There's no Space “\(space)” here. Spaces: \(known.isEmpty ? "none" : known).", isError: true)
             }
             guard !window.isFullscreen else {
-                return CommandReply(text: "\(handle) is fullscreen; Space Maker doesn't move fullscreen windows yet.", isError: true)
+                return CommandReply(text: "\(handle) is fullscreen, so it has no Space to move to. Put it in place in Mission Control, then Save.", isError: true)
             }
             if window.desktopID != target, !windowSystem.moveWindow(window.id, toDesktop: target) {
                 return CommandReply(text: "macOS didn't move \(handle) to \(space).", isError: true)
@@ -348,6 +394,12 @@ extension Engine {
 
     static func unknownHandleReply(_ handle: String) -> CommandReply {
         CommandReply(text: "No window has the handle “\(handle)”. Handles come from status.", isError: true)
+    }
+
+    /// What a fullscreen window's place is called when first Saved, such as "Work fullscreen".
+    static func fullscreenPlaceName(of window: WindowSystemWindow) -> String {
+        if case .known(let profile) = window.chromeProfile { return "\(profile) fullscreen" }
+        return "\(window.appName) fullscreen"
     }
 
     /// The app with the most windows; the first such window's app on a tie.

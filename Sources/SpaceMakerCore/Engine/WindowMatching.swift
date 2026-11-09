@@ -68,6 +68,24 @@ extension Engine {
             let candidates = unmatched(identity)
             if rivals.count == 1, candidates.count == 1 { pair(index, candidates[0]) }
         }
+
+        // 4. A fullscreen Assignment whose window has left fullscreen: the one unmatched window that is otherwise
+        //    its kind, so Restore can put it back in fullscreen.
+        for (index, assignment) in assignments.enumerated() where windowFor[index] == nil && assignment.window.isFullscreen {
+            var identity = assignment.window
+            identity.isFullscreen = false
+            let candidates = unmatched(identity).filter { window in
+                guard identity.isChrome else { return true }
+                if let name = identity.name { return window.name == name }
+                return identity.chromeProfile.map { window.chromeProfile == .known($0) } ?? false
+            }
+            let rivals = assignments.indices.filter { other in
+                windowFor[other] == nil && assignments[other].window.isFullscreen
+                    && assignments[other].window.bundleID == identity.bundleID
+                    && assignments[other].window.chromeProfile == identity.chromeProfile
+            }
+            if rivals.count == 1, candidates.count == 1 { pair(index, candidates[0]) }
+        }
         return matched
     }
 
