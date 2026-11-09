@@ -86,8 +86,16 @@ final class FakeWindowSystem: WindowSystem {
     /// How many times anything asked macOS to move a window between desktops.
     private(set) var moveAttempts = 0
 
+    /// Runs once, during the next move, as when the real adapter runs the run loop while a move lands and
+    /// timers, events and socket commands get their turn.
+    var whileNextMoveLands: (() -> Void)?
+
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
         moveAttempts += 1
+        if let meanwhile = whileNextMoveLands {
+            whileNextMoveLands = nil
+            meanwhile()
+        }
         guard unsettledReads == 0, !unmovableWindows.contains(windowID),
               displays.contains(where: { $0.desktops.contains { $0.id == desktopID } })
         else { return false }

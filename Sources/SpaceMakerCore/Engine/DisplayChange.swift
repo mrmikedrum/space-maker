@@ -77,6 +77,10 @@ extension Engine {
     /// A full Restore nobody asked for: it runs only while automatic behaviour isn't paused.
     /// A change that settles while paused is not replayed on resume; Restore all catches up.
     private func restoreAutomatically() {
+        guard !isMovingWindows else {  // a Placement is under way: Restore once it's done
+            windowSystem.schedule(after: Self.desktopSettlePollInterval) { [weak self] in self?.restoreAutomatically() }
+            return
+        }
         let framesBefore = displayChange.framesBefore ?? [:]
         displayChange.framesBefore = nil
         guard !isPaused else { return }
@@ -113,7 +117,7 @@ extension Engine {
                   !Self.isAt(window.frame, before.frame),
                   matches[window.id].map({ layout.assignments[$0].frame(in: setup) == nil }) ?? true
             else { continue }
-            _ = windowSystem.setFrame(window.id, to: before.frame)
+            _ = movingWindows { windowSystem.setFrame(window.id, to: before.frame) }
         }
     }
 

@@ -45,6 +45,13 @@ public final class Engine {
     /// Progress towards the automatic Restore after a display change.
     var displayChange = DisplayChangeProgress()
 
+    /// Whether Restore or Placement is moving windows right now. The macOS adapter waits for each move to land by
+    /// running the run loop, so timers, Layout file changes, socket commands and events can arrive meanwhile; none of
+    /// them may change the Layout or move windows until it's done.
+    private(set) var isMovingWindows = false
+    /// Windows that appeared while windows were being moved, placed once that's done.
+    private var deferredPlacements: [UInt32] = []
+
     /// `layoutURL` is where the Layout file lives (`LayoutFile.defaultURL` in the app).
     /// `runDoctor` runs the Doctor and returns its markdown report.
     public init(
@@ -71,7 +78,7 @@ public final class Engine {
             guard pins.contains(windowID) else { return }
             windowSystem.focusWindow(windowID)
         case .windowAppeared(let windowID):
-            place(windowID)
+            if isMovingWindows { deferredPlacements.append(windowID) } else { place(windowID) }
         case .windowClosed(let windowID):
             appearedWindows.remove(windowID)
             unpin(windowID)
@@ -82,6 +89,9 @@ public final class Engine {
 
     /// The command interface the socket relay and the menu bar share.
     public func perform(_ request: CommandRequest) -> CommandReply {
+        if isMovingWindows, request.command != "status" {
+            return CommandReply(text: "Space Maker is in the middle of moving windows. Try again in a moment.", isError: true)
+        }
         switch request.command {
         case "status":
             let encoder = JSONEncoder()
@@ -117,6 +127,20 @@ public final class Engine {
         default:
             return CommandReply(text: "Unknown command \"\(request.command)\".", isError: true)
         }
+    }
+
+    /// Runs `body`, which moves windows, with the Layout held still. Layout changes that arrived meanwhile are read,
+    /// and windows that appeared meanwhile are placed, once it's done.
+    func movingWindows<Result>(_ body: () -> Result) -> Result {
+        guard !isMovingWindows else { return body() }
+        isMovingWindows = true
+        let result = body()
+        isMovingWindows = false
+        reloadLayoutIfChanged()
+        let appeared = deferredPlacements
+        deferredPlacements = []
+        for windowID in appeared { place(windowID) }
+        return result
     }
 
     // MARK: - Pins

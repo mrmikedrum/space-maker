@@ -191,6 +191,39 @@ struct SaveAndRestoreTests {
         #expect(try Data(contentsOf: layoutURL) == saved)
     }
 
+    @Test func aLayoutEditAndCommandsArrivingWhileRestoreMovesWindowsDontChangeWhereItSendsThem() throws {
+        threeDesktops()
+        world.windows = [
+            .app(501, "com.apple.Terminal", "Terminal", title: "zsh", desktop: 11),
+            .app(502, "com.tinyspeck.slackmacgap", "Slack", title: "general", desktop: 12),
+            .app(503, "com.apple.Music", "Music", title: "Music", desktop: 13),
+        ]
+        let engine = engine()
+        try engine.run("save")
+        world.move(501, to: 12)
+        world.move(502, to: 13)
+        world.move(503, to: 11)
+
+        // While the first move lands: the user hand-edits the Layout (the same Assignments, listed in another
+        // order), the watcher and the menu bar's timer fire, and an agent asks to Save.
+        var saveMeanwhile: CommandReply?
+        world.whileNextMoveLands = {
+            var edited = (try? JSONDecoder().decode(Layout.self, from: Data(contentsOf: layoutURL))) ?? Layout()
+            edited.assignments.reverse()
+            try? JSONEncoder().encode(edited).write(to: layoutURL)
+            engine.layoutFileChanged()
+            _ = engine.status()
+            saveMeanwhile = engine.perform(CommandRequest(command: "save"))
+        }
+        try engine.run("restore")
+
+        #expect(world.desktop(of: 501) == 11)
+        #expect(world.desktop(of: 502) == 12)
+        #expect(world.desktop(of: 503) == 13)
+        #expect(saveMeanwhile?.isError == true)
+        #expect(engine.status().drift.isEmpty)
+    }
+
     @Test func theLayoutIsVersionedReadableJSON() throws {
         threeDesktops()
         world.windows = [.app(501, "com.apple.Terminal", "Terminal", title: "zsh", desktop: 11)]

@@ -12,6 +12,7 @@ extension Engine {
     /// Re-reads the Layout file if its bytes differ from what the engine last read or wrote.
     /// Every command calls this first, so a hand edit is honoured even if the watcher missed it.
     func reloadLayoutIfChanged() {
+        guard !isMovingWindows else { return }  // read once the moves are done
         let data: Data?
         switch LayoutFile.read(at: layoutURL) {
         case .data(let bytes): data = bytes
@@ -278,8 +279,10 @@ extension Engine {
             let displays = windowSystem.readDisplays()
             guard let desktops = resolvedSpaces(displays) else { return Self.unknownDisplaySetupReply }
             let windows = windowSystem.readWindows().filter(\.isStandard)
-            let matches = Self.match(windows, to: layout.assignments)
-            let spaceOf = { (window: WindowSystemWindow) in matches[window.id].map { self.layout.assignments[$0].space } }
+            // Restore works from the Layout as it is now, even if the file changes while windows move.
+            let assignments = layout.assignments
+            let matches = Self.match(windows, to: assignments)
+            let spaceOf = { (window: WindowSystemWindow) in matches[window.id].map { assignments[$0].space } }
             let known = knownDisplays(displays)
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
             defer { rememberWorldForSoftDrift() }
@@ -295,64 +298,66 @@ extension Engine {
                 targets = [window]
             }
 
-            var moved: [String] = []
-            var problems: [String] = []
-            var notRetried: [String] = []
-            for window in targets {
-                guard let index = matches[window.id] else { continue }  // no Assignment: never moved
-                let space = layout.assignments[index].space
-                let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
-                if layout.assignments[matches[window.id]!].window.isFullscreen {
-                    guard let place = places[space] else {
-                        problems.append("\(label): “\(space)” has no place in this Display Setup's Arrangement.")
+            return movingWindows { () -> CommandReply in
+                var moved: [String] = []
+                var problems: [String] = []
+                var notRetried: [String] = []
+                for window in targets {
+                    guard let index = matches[window.id] else { continue }  // no Assignment: never moved
+                    let space = assignments[index].space
+                    let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
+                    if assignments[index].window.isFullscreen {
+                        guard let place = places[space] else {
+                            problems.append("\(label): “\(space)” has no place in this Display Setup's Arrangement.")
+                            continue
+                        }
+                        if handle == nil, failedMoves.contains(window.id), !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID }) {
+                            notRetried.append(label)
+                            continue
+                        }
+                        switch restoreFullscreen(window, to: place) {
+                        case nil: continue
+                        case true?:
+                            moved.append("\(label) → fullscreen \(place.description)")
+                            failedMoves.remove(window.id)
+                        case false?:
+                            problems.append("\(label): macOS didn't put it back in fullscreen \(place.description).")
+                            failedMoves.insert(window.id)
+                        }
                         continue
                     }
-                    if handle == nil, failedMoves.contains(window.id), !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID }) {
+                    guard !window.isFullscreen else { continue }
+                    guard let target = desktops[space] else {
+                        problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")
+                        continue
+                    }
+                    let plan = plan(window, assignments[index], on: target, displays: known)
+                    if !plan.isNeeded { continue }
+                    // Soft Drift: a move that already failed isn't retried until the world changes, unless asked for by handle.
+                    if handle == nil, failedMoves.contains(window.id) || failedFrames.contains(window.id) {
                         notRetried.append(label)
                         continue
                     }
-                    switch restoreFullscreen(window, to: place) {
-                    case nil: continue
-                    case true?:
-                        moved.append("\(label) → fullscreen \(place.description)")
-                        failedMoves.remove(window.id)
-                    case false?:
-                        problems.append("\(label): macOS didn't put it back in fullscreen \(place.description).")
-                        failedMoves.insert(window.id)
+                    switch carryOut(plan, for: window.id) {
+                    case .moveFailed:
+                        problems.append("\(label): macOS didn't move it to \(space).")
+                        continue
+                    case .frameFailed:
+                        problems.append("\(label): macOS didn't put it back at its saved position.")
+                        continue
+                    case .done: break
                     }
-                    continue
+                    moved.append(plan.needsMove ? "\(label) → \(space)" : "\(label) → its saved position")
                 }
-                guard !window.isFullscreen else { continue }
-                guard let target = desktops[space] else {
-                    problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")
-                    continue
-                }
-                let plan = plan(window, layout.assignments[index], on: target, displays: known)
-                if !plan.isNeeded { continue }
-                // Soft Drift: a move that already failed isn't retried until the world changes, unless asked for by handle.
-                if handle == nil, failedMoves.contains(window.id) || failedFrames.contains(window.id) {
-                    notRetried.append(label)
-                    continue
-                }
-                switch carryOut(plan, for: window.id) {
-                case .moveFailed:
-                    problems.append("\(label): macOS didn't move it to \(space).")
-                    continue
-                case .frameFailed:
-                    problems.append("\(label): macOS didn't put it back at its saved position.")
-                    continue
-                case .done: break
-                }
-                moved.append(plan.needsMove ? "\(label) → \(space)" : "\(label) → its saved position")
-            }
 
-            var lines = [moved.isEmpty ? "Everything was already on its Space." : "Moved \(moved.count) window\(moved.count == 1 ? "" : "s"):"]
-            lines += moved.map { "- \($0)" }
-            if !problems.isEmpty { lines += ["Couldn't restore:"] + problems.map { "- \($0)" } }
-            if !notRetried.isEmpty {
-                lines += ["Not retried until windows or desktops change (Soft Drift):"] + notRetried.map { "- \($0)" }
+                var lines = [moved.isEmpty ? "Everything was already on its Space." : "Moved \(moved.count) window\(moved.count == 1 ? "" : "s"):"]
+                lines += moved.map { "- \($0)" }
+                if !problems.isEmpty { lines += ["Couldn't restore:"] + problems.map { "- \($0)" } }
+                if !notRetried.isEmpty {
+                    lines += ["Not retried until windows or desktops change (Soft Drift):"] + notRetried.map { "- \($0)" }
+                }
+                return CommandReply(text: lines.joined(separator: "\n"), isError: handle != nil && !problems.isEmpty)
             }
-            return CommandReply(text: lines.joined(separator: "\n"), isError: handle != nil && !problems.isEmpty)
         }
     }
 

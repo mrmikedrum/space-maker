@@ -39,7 +39,7 @@ extension Engine {
                   !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID })
             else { return }
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
-            if restoreFullscreen(window, to: place) == false { failedMoves.insert(windowID) } else { failedMoves.remove(windowID) }
+            if movingWindows({ restoreFullscreen(window, to: place) }) == false { failedMoves.insert(windowID) } else { failedMoves.remove(windowID) }
             rememberWorldForSoftDrift()
             return
         }
@@ -47,7 +47,7 @@ extension Engine {
         let plan = plan(window, assignment, on: target, displays: knownDisplays(displays))
         guard plan.isNeeded else { return }
         forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
-        _ = carryOut(plan, for: windowID)  // a failure is Soft Drift, like a failed Restore
+        _ = movingWindows { carryOut(plan, for: windowID) }  // a failure is Soft Drift, like a failed Restore
         rememberWorldForSoftDrift()
     }
 }

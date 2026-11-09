@@ -68,7 +68,7 @@ struct WorldSnapshot: Equatable {
 extension Engine {
     /// `windows` are the standard windows; panels, dialogs and sheets never drift, and Ignored windows are skipped.
     func drift(displays: [WindowSystemDisplay], windows: [WindowSystemWindow]) -> (drift: [DriftStatus], softDrift: [SoftDriftStatus]) {
-        forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
+        if !isMovingWindows { forgetSoftDriftIfWorldChanged(displays: displays, windows: windows) }  // Restore remembers it when done
         guard let desktops = resolvedSpaces(displays) else {
             return ([], [SoftDriftStatus(
                 handle: nil, app: nil, title: nil,
