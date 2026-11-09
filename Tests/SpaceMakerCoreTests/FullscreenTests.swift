@@ -213,6 +213,26 @@ struct FullscreenTests {
         #expect(engine.status().drift.isEmpty)
     }
 
+    @Test func savingWhileANamedFullscreenWindowIsClosedKeepsItsAssignmentAndItsPlace() throws {
+        laptopAlone()
+        world.windows[4] = .chrome(604, profile: .known("Work"), title: "Calendar", desktop: 902, fullscreen: true, name: "Work main")
+        let engine = engine()
+        try engine.run("save")
+
+        world.closeWindow(604)
+        world.displays[0].desktops.removeAll { $0.id == 902 }
+        try engine.run("save")
+
+        let layout = try savedLayout()
+        #expect(layout.displaySetups[0].arrangement[0].order
+            == ["Game fullscreen", "TickTick", "Google Chrome", "Google Chrome 2", "Work fullscreen"])
+        #expect(layout.assignments.contains { $0.window.name == "Work main" && $0.window.isFullscreen && $0.space == "Work fullscreen" })
+
+        // It comes back as a normal window and goes back to its place.
+        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 11, name: "Work main"))
+        #expect(world.order(of: "built-in") == ["fullscreen 601", "11", "12", "13", "fullscreen 1604"])
+    }
+
     @Test func aSpaceCantBeRenamedToAFullscreenWindowsPlace() throws {
         laptopAlone()
         let engine = engine()

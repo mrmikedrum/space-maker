@@ -90,6 +90,19 @@ extension Engine {
             var namesByDesktop: [UInt64: String] = [:]
             var fullscreenPlaces: [UInt32: String] = [:]  // fullscreen window ID → its place's name
 
+            // A fullscreen Assignment that Save keeps without re-saving it (its window is closed but named, or open
+            // but Ignored or not on a known display) keeps its place in this Display Setup's Arrangement too.
+            let live = Set(matches.values)
+            let kinds = Dictionary(displays.flatMap(\.desktops).map { ($0.id, $0.kind) }, uniquingKeysWith: { first, _ in first })
+            let resaving = Set(windows.filter { window in
+                window.desktopID.flatMap { kinds[$0] } == (window.isFullscreen ? .fullscreen : .regular)
+            }.compactMap { matches[$0.id] })
+            let keptPlaces = Set(layout.assignments.indices.filter { index in
+                let assignment = layout.assignments[index]
+                return assignment.window.isFullscreen && !resaving.contains(index) && (live.contains(index) || assignment.window.name != nil)
+            }.map { layout.assignments[$0].space })
+            taken.formUnion(keptPlaces)
+
             // Name every regular desktop, display by display, keeping existing Spaces where the evidence allows.
             for display in displays {
                 let desktops = display.desktops.filter { $0.kind == .regular }
@@ -148,6 +161,12 @@ extension Engine {
                         arranged.append(ArrangedFullscreenWindow(name: name, spacesBefore: spacesBefore))
                     }
                 }
+                let kept = (previous?.arrangement.first { $0.display == display.id }?.fullscreenWindows ?? [])
+                    .filter { keptPlaces.contains($0.name) }
+                    .map { ArrangedFullscreenWindow(name: $0.name, spacesBefore: min(max($0.spacesBefore, 0), resolved.count)) }
+                arranged = (arranged + kept).enumerated()
+                    .sorted { ($0.element.spacesBefore, $0.offset) < ($1.element.spacesBefore, $1.offset) }
+                    .map(\.element)
                 arrangement.append(DisplayArrangement(display: display.id, spaces: resolved, fullscreenWindows: arranged))
             }
 
@@ -189,7 +208,6 @@ extension Engine {
                 assignments.append(assignment)
                 saved += 1
             }
-            let live = Set(matches.values)
             let places = Set(layout.spaces).union(fullscreenPlaceNames)
             for (index, assignment) in layout.assignments.enumerated() where !resaved.contains(index) {
                 guard places.contains(assignment.space), live.contains(index) || assignment.window.name != nil else { continue }
