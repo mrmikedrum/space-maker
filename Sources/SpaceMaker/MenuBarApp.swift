@@ -53,6 +53,8 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
         item.button?.image = image
 
         let menu = NSMenu()
+        menu.addItem(menuItem("Pin or Unpin Frontmost Window", #selector(pinFrontmostClicked)))
+        menu.addItem(.separator())
         menu.addItem(menuItem("Run Doctor", #selector(doctorClicked)))
         menu.addItem(menuItem("Open Layout File", #selector(openLayoutClicked)))
         menu.addItem(.separator())
@@ -65,6 +67,16 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         return item
+    }
+
+    @objc private func pinFrontmostClicked() {
+        let reply = engine.togglePinOfFrontmostWindow()
+        guard reply.isError else { return }
+        let alert = NSAlert()
+        alert.messageText = "Couldn't pin"
+        alert.informativeText = reply.text
+        NSApp.activate()
+        alert.runModal()
     }
 
     @objc private func doctorClicked() {
@@ -95,11 +107,22 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
         do {
             let results = try doctor.run()
             showDoctorFailed(results.contains(where: \.failed))
+            updatePins(from: results)
             return doctor.reportURL
         } catch {
             log("The Doctor couldn't write its report: \(error)")
             showDoctorFailed(true)
             return nil
+        }
+    }
+
+    /// A failed screen capture check disables only Pins.
+    private func updatePins(from results: [CheckResult]) {
+        guard let capture = results.first(where: { $0.title == StandardDoctor.screenCaptureTitle }) else { return }
+        if capture.failed {
+            engine.disablePins(because: capture.outcome.summary)
+        } else {
+            engine.enablePins()
         }
     }
 
