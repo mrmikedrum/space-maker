@@ -29,7 +29,7 @@ public struct MCPShim: Sendable {
     public static let notRunning = "Space Maker isn't running."
 
     public static let tools = [
-        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, and which Space each desktop holds. Displays other than the built-in one are Guest Displays for now. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
+        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, which Space each desktop holds, and the handles of pinned windows. Displays other than the built-in one are Guest Displays for now. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
         Tool(name: "save", description: "Save: record which Space every window is on, and the order of Spaces on each display, into the Layout. A desktop Space Maker hasn't seen before becomes a new Space named after its main app. Give a window handle to save just that window's Assignment as the Space it's on now.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\". Omit to save everything.", isRequired: false),
         ]),
@@ -48,6 +48,12 @@ public struct MCPShim: Sendable {
         Tool(name: "rename_space", description: "Rename a Space. Its windows stay assigned to it.", parameters: [
             Parameter(name: "space", kind: .string, description: "The Space's current name.", isRequired: true),
             Parameter(name: "name", kind: .string, description: "Its new name.", isRequired: true),
+        ]),
+        Tool(name: "pin", description: "Pin a window: a live mirror of it floats above other windows on every regular Space, hidden while the window itself is visible. Clicking the mirror switches to the window. Fullscreen windows can't be pinned. Pins are temporary and never saved.", parameters: [
+            Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
+        ]),
+        Tool(name: "unpin", description: "Remove a window's Pin.", parameters: [
+            Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
         ]),
         Tool(name: "doctor", description: "Run Space Maker's Doctor, a self-check of the macOS internals it relies on, and return its markdown report."),
     ]

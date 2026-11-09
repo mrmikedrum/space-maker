@@ -78,6 +78,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         menu.addItem(menuItem("Save All", #selector(saveAllClicked)))
         menu.addItem(menuItem("Restore All", #selector(restoreAllClicked)))
+        menu.addItem(menuItem("Pin or Unpin Frontmost Window", #selector(pinFrontmostClicked)))
 
         if !status.drift.isEmpty {
             menu.addItem(.separator())
@@ -178,6 +179,16 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.runModal()
     }
 
+    @objc private func pinFrontmostClicked() {
+        let reply = engine.togglePinOfFrontmostWindow()
+        guard reply.isError else { return }
+        let alert = NSAlert()
+        alert.messageText = "Space Maker couldn't Pin"
+        alert.informativeText = reply.text
+        NSApp.activate()
+        alert.runModal()
+    }
+
     @objc private func doctorClicked() {
         if let report = runDoctor() { NSWorkspace.shared.open(report) }
     }
@@ -207,11 +218,22 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let results = try doctor.run()
             engine.setMovesDisabled(because: StandardDoctor.moveFailure(in: results))
             showDoctorFailed(results.contains(where: \.failed))
+            updatePins(from: results)
             return doctor.reportURL
         } catch {
             log("The Doctor couldn't write its report: \(error)")
             showDoctorFailed(true)
             return nil
+        }
+    }
+
+    /// A failed screen capture check disables only Pins.
+    private func updatePins(from results: [CheckResult]) {
+        guard let capture = results.first(where: { $0.title == StandardDoctor.screenCaptureTitle }) else { return }
+        if capture.failed {
+            engine.disablePins(because: capture.outcome.summary)
+        } else {
+            engine.enablePins()
         }
     }
 

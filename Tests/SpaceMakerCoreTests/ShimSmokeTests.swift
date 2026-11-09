@@ -22,6 +22,23 @@ struct ShimSmokeTests {
         #expect(status.windows.map(\.title) == ["Today"])
     }
 
+    @Test func pinCarriesItsWindowHandleThroughTheSocket() async throws {
+        let world = FakeWindowSystem()
+        world.displays = [.builtIn(desktops: [.init(id: 11, kind: .regular, isCurrent: true), .init(id: 12, kind: .regular, isCurrent: false)])]
+        world.windows = [.app(7, "com.ticktick.task.mac", "TickTick", title: "Today", desktop: 12)]
+        let engine = Engine(windowSystem: world, layoutURL: .temporaryLayout())
+        _ = engine.status()
+        let socket = Self.temporarySocketPath()
+        let server = try CommandServer.start(socketPath: socket) { request in await engine.perform(request) }
+        defer { server.stop() }
+
+        let result = await MCPShim(socketPath: socket).callTool(named: "pin", arguments: ["window": "w1"])
+
+        #expect(!result.isError)
+        #expect(result.text == "Pinned TickTick \"Today\" (w1).")
+        #expect(world.mirrors == [7: .shown])
+    }
+
     @Test func theShimSaysSoWhenSpaceMakerIsntRunning() async {
         let result = await MCPShim(socketPath: Self.temporarySocketPath()).callTool(named: "status")
 

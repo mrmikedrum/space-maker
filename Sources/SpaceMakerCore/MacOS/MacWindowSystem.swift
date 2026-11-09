@@ -11,9 +11,17 @@ public final class MacWindowSystem: WindowSystem {
     public static let chromeBundleID = "com.google.Chrome"
 
     private let skyLight: SkyLight
+    public var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
+    var mirrors: [UInt32: PinMirror] = [:]
+    private var activeSpaceObserver: NSObjectProtocol?
 
     public init(skyLight: SkyLight) {
         self.skyLight = skyLight
+        activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onEvent?(.activeSpaceChanged) }
+        }
     }
 
     // MARK: - Displays
@@ -204,5 +212,61 @@ enum AX {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
         return value as? T
+    }
+}
+
+// MARK: - Focus and Pin mirrors
+
+extension MacWindowSystem {
+    public func readFrontmostWindow() -> UInt32? {
+        guard AXIsProcessTrusted(),
+              let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        else { return nil }
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        guard let window: AXUIElement = AX.value(element, kAXFocusedWindowAttribute) else { return nil }
+        return PrivateAccessibility.windowID(of: window)
+    }
+
+    public func focusWindow(_ windowID: UInt32) {
+        guard let info = Self.windowInfo(windowID),
+              let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
+        else { return }
+        if skyLight.focusWindow(windowID, ownedBy: pid) { return }
+        // Fallback: activating the app switches to a desktop with one of its windows, maybe not this one.
+        NSRunningApplication(processIdentifier: pid)?.activate()
+        if let element = Self.accessibilityWindows(pid: pid)[windowID]?.element {
+            AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        }
+    }
+
+    public func showPinMirror(of windowID: UInt32) {
+        if let mirror = mirrors[windowID] {
+            mirror.show()
+            return
+        }
+        let bounds = (Self.windowInfo(windowID)?[kCGWindowBounds as String] as? NSDictionary)
+            .flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
+        let mirror = PinMirror(windowID: windowID, sourceSize: bounds.size, slot: mirrors.count) { [weak self] in
+            self?.onEvent?(.pinClicked(windowID))
+        }
+        mirror.onCaptureStopped = { [weak self] in
+            // A stream also stops when Screen Recording is revoked; only a vanished window is a close.
+            if Self.windowInfo(windowID) == nil { self?.onEvent?(.windowClosed(windowID)) }
+        }
+        mirrors[windowID] = mirror
+        mirror.show()
+    }
+
+    public func hidePinMirror(of windowID: UInt32) {
+        mirrors[windowID]?.hide()
+    }
+
+    public func stopPinMirror(of windowID: UInt32) {
+        mirrors.removeValue(forKey: windowID)?.stop()
+    }
+
+    private static func windowInfo(_ windowID: UInt32) -> [String: Any]? {
+        (CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID) as? [[String: Any]])?.first
     }
 }
