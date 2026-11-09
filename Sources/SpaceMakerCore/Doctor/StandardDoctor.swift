@@ -33,6 +33,14 @@ public enum StandardDoctor {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/SpaceMaker")
     }
 
+    /// Why moving windows doesn't work, if the live move test failed. Restore and `move_window` depend on it.
+    public static func moveFailure(in results: [CheckResult]) -> String? {
+        guard let result = results.first(where: { $0.title == liveMoveTitle }),
+              case .fail(let cause) = result.status
+        else { return nil }
+        return "\(result.outcome.summary) Suspected cause: \(cause)"
+    }
+
     static func verdict(_ results: [CheckResult]) -> String {
         let os = ProcessInfo.processInfo.operatingSystemVersionString.replacingOccurrences(of: "Version ", with: "")
         let failures = results.filter(\.failed).map(\.title)

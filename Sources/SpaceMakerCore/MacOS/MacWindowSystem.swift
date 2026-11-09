@@ -105,6 +105,22 @@ public final class MacWindowSystem: WindowSystem {
         return windows
     }
 
+    // MARK: - Actions
+
+    /// How long a bridged move gets to land before it counts as failed.
+    private static let moveSettleTimeout: TimeInterval = 1
+
+    /// The bridged move is asynchronous, so this polls until the window is on the target desktop.
+    public func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
+        guard skyLight.moveWindow(windowID, toDesktop: desktopID) else { return false }
+        let deadline = Date().addingTimeInterval(Self.moveSettleTimeout)
+        repeat {
+            if skyLight.desktopIDs(forWindow: windowID) == [desktopID] { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        } while Date() < deadline
+        return false
+    }
+
     private struct AccessibilityWindow {
         let element: AXUIElement
         let title: String?

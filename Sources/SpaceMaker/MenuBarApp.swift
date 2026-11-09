@@ -7,9 +7,10 @@ import SpaceMakerCore
 final class MenuBarApp: NSObject, NSApplicationDelegate {
     private let skyLight = SkyLight()
     private lazy var windowSystem = MacWindowSystem(skyLight: skyLight)
-    private lazy var engine = Engine(windowSystem: windowSystem) { [unowned self] in self.runDoctorForReport() }
+    private lazy var engine = Engine(windowSystem: windowSystem, layoutURL: LayoutFile.defaultURL) { [unowned self] in self.runDoctorForReport() }
     private var statusItem: NSStatusItem?
     private var server: CommandServer?
+    private var layoutWatcher: LayoutWatcher?
 
     static func makeDoctor(skyLight: SkyLight, windowSystem: MacWindowSystem? = nil) -> Doctor {
         let executable = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
@@ -34,6 +35,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
             log("Couldn't open the command socket, so MCP won't work: \(error)")
         }
 
+        layoutWatcher = LayoutWatcher(url: LayoutFile.defaultURL) { [weak self] in self?.engine.layoutFileChanged() }
         registerLoginItem()
         installStatusItem()
         // Doctor at launch, once the menu bar item is showing.
@@ -53,6 +55,9 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
         item.button?.image = image
 
         let menu = NSMenu()
+        menu.addItem(menuItem("Save All", #selector(saveAllClicked)))
+        menu.addItem(menuItem("Restore All", #selector(restoreAllClicked)))
+        menu.addItem(.separator())
         menu.addItem(menuItem("Run Doctor", #selector(doctorClicked)))
         menu.addItem(menuItem("Open Layout File", #selector(openLayoutClicked)))
         menu.addItem(.separator())
@@ -65,6 +70,25 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         return item
+    }
+
+    @objc private func saveAllClicked() {
+        perform("save", failureTitle: "Space Maker couldn't Save")
+    }
+
+    @objc private func restoreAllClicked() {
+        perform("restore", failureTitle: "Space Maker couldn't Restore everything")
+    }
+
+    /// Runs a command through the engine, as MCP would, and only speaks up when something went wrong.
+    private func perform(_ command: String, failureTitle: String) {
+        let reply = engine.perform(CommandRequest(command: command))
+        guard reply.isError || reply.text.contains("Couldn't") else { return }
+        let alert = NSAlert()
+        alert.messageText = failureTitle
+        alert.informativeText = reply.text
+        NSApp.activate()
+        alert.runModal()
     }
 
     @objc private func doctorClicked() {
@@ -94,6 +118,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
         let doctor = Self.makeDoctor(skyLight: skyLight, windowSystem: windowSystem)
         do {
             let results = try doctor.run()
+            engine.setMovesDisabled(because: StandardDoctor.moveFailure(in: results))
             showDoctorFailed(results.contains(where: \.failed))
             return doctor.reportURL
         } catch {

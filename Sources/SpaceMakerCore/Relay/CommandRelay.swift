@@ -3,9 +3,18 @@ import Foundation
 /// One command sent to the app over the local socket, as one line of JSON (ADR 0002).
 public struct CommandRequest: Codable, Equatable, Sendable {
     public var command: String
+    /// Named arguments, such as a window handle or a Space name. Never coordinates.
+    public var arguments: [String: String]
 
-    public init(command: String) {
+    public init(command: String, arguments: [String: String] = [:]) {
         self.command = command
+        self.arguments = arguments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        command = try container.decode(String.self, forKey: .command)
+        arguments = try container.decodeIfPresent([String: String].self, forKey: .arguments) ?? [:]
     }
 }
 
