@@ -285,9 +285,25 @@ public enum LayoutFile {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/space-maker/layout.json")
     }
 
-    /// The file's bytes, or nil if there's no Layout yet.
-    static func readData(at url: URL) -> Data? {
-        try? Data(contentsOf: url)
+    /// What reading the file found: its bytes, no file yet, or an error that isn't "no such file".
+    enum ReadResult: Equatable {
+        case data(Data)
+        case absent
+        case failed(String)
+    }
+
+    /// Only a missing file means there's no Layout yet. Any other error (such as permission denied) is a
+    /// problem, so that Save never overwrites a Layout it couldn't read.
+    static func read(at url: URL) -> ReadResult {
+        do {
+            return .data(try Data(contentsOf: url))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return .absent
+        } catch let error as NSError where error.domain == NSPOSIXErrorDomain && error.code == Int(ENOENT) {
+            return .absent
+        } catch {
+            return .failed(error.localizedDescription)
+        }
     }
 
     static func decode(_ data: Data, from url: URL) throws -> Layout {

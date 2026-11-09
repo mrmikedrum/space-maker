@@ -174,6 +174,23 @@ struct SaveAndRestoreTests {
         #expect(try String(contentsOf: layoutURL, encoding: .utf8) == "{ not json")
     }
 
+    @Test func aLayoutFileThatCantBeReadIsReportedAndNeverOverwritten() throws {
+        threeDesktops()
+        world.windows = [.app(501, "com.apple.Terminal", "Terminal", title: "zsh", desktop: 11)]
+        try engine().run("save")
+        let saved = try Data(contentsOf: layoutURL)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: layoutURL.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: layoutURL.path) }
+        let engine = engine()  // a fresh launch that can't read the file
+        let reply = engine.perform(CommandRequest(command: "save"))
+
+        #expect(reply.isError)
+        #expect(reply.text.contains(layoutURL.path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: layoutURL.path)
+        #expect(try Data(contentsOf: layoutURL) == saved)
+    }
+
     @Test func theLayoutIsVersionedReadableJSON() throws {
         threeDesktops()
         world.windows = [.app(501, "com.apple.Terminal", "Terminal", title: "zsh", desktop: 11)]

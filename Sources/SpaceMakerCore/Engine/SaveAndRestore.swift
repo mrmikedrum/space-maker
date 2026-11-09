@@ -12,7 +12,15 @@ extension Engine {
     /// Re-reads the Layout file if its bytes differ from what the engine last read or wrote.
     /// Every command calls this first, so a hand edit is honoured even if the watcher missed it.
     func reloadLayoutIfChanged() {
-        let data = LayoutFile.readData(at: layoutURL)
+        let data: Data?
+        switch LayoutFile.read(at: layoutURL) {
+        case .data(let bytes): data = bytes
+        case .absent: data = nil
+        case .failed(let reason):
+            layoutData = nil
+            layoutProblem = .unreadable(layoutURL, reason)
+            return
+        }
         guard data != layoutData || layoutProblem != nil else { return }
         layoutData = data
         guard let data else {
