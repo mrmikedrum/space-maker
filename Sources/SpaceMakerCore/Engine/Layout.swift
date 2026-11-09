@@ -9,31 +9,51 @@ public struct Layout: Codable, Equatable, Sendable {
     public var version: Int
     /// Every Space's name, in the order the user first saw them.
     public var spaces: [String]
+    /// Displays the user remembered with `remember_display`. The built-in display is implicit.
+    public var knownDisplays: [KnownDisplay]
     public var displaySetups: [DisplaySetupLayout]
     public var assignments: [Assignment]
     /// Bundle IDs of apps the user always Ignores.
     public var ignoredApps: [String]
 
     public init(
-        version: Int = Layout.currentVersion, spaces: [String] = [],
+        version: Int = Layout.currentVersion, spaces: [String] = [], knownDisplays: [KnownDisplay] = [],
         displaySetups: [DisplaySetupLayout] = [], assignments: [Assignment] = [],
         ignoredApps: [String] = []
     ) {
         self.version = version
         self.spaces = spaces
+        self.knownDisplays = knownDisplays
         self.displaySetups = displaySetups
         self.assignments = assignments
         self.ignoredApps = ignoredApps
     }
 
-    /// `ignoredApps` may be missing from a Layout written before Ignore existed, or trimmed by hand.
+    /// `ignoredApps` and `knownDisplays` may be missing from a Layout written before Ignore or
+    /// Display Setups existed, or trimmed by hand.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decode(Int.self, forKey: .version)
         spaces = try container.decode([String].self, forKey: .spaces)
+        knownDisplays = try container.decodeIfPresent([KnownDisplay].self, forKey: .knownDisplays) ?? []
         displaySetups = try container.decode([DisplaySetupLayout].self, forKey: .displaySetups)
         assignments = try container.decode([Assignment].self, forKey: .assignments)
         ignoredApps = try container.decodeIfPresent([String].self, forKey: .ignoredApps) ?? []
+    }
+}
+
+/// A display the user remembered into Display Setups. Every other display, except the built-in one, is a Guest Display.
+public struct KnownDisplay: Codable, Equatable, Sendable {
+    /// The display's UUID when it was remembered; Display Setups and Arrangements name the display by it.
+    public var id: String
+    /// Vendor, model and serial number, which recognise the display if WindowServer gives it a new UUID.
+    public var hardwareID: String?
+    public var name: String
+
+    public init(id: String, hardwareID: String?, name: String) {
+        self.id = id
+        self.hardwareID = hardwareID
+        self.name = name
     }
 }
 

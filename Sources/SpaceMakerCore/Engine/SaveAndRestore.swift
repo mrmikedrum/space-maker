@@ -69,7 +69,7 @@ extension Engine {
 
     func save() -> CommandReply {
         withLayout {
-            let displays = Self.knownDisplays(windowSystem.readDisplays())
+            let displays = knownDisplays(windowSystem.readDisplays())
             let standard = windowSystem.readWindows().filter(\.isStandard)
             let windows = standard.filter { !isIgnored($0) }  // Ignored windows keep whatever Assignment they had
             let setupKey = displays.map(\.id).sorted()
@@ -303,7 +303,7 @@ extension Engine {
 
     /// Each Space's native desktop in the current Display Setup (ADR 0003), or nil if nothing is saved for it.
     func resolvedSpaces(_ displays: [WindowSystemDisplay]) -> [String: UInt64]? {
-        let known = Self.knownDisplays(displays)
+        let known = knownDisplays(displays)
         guard let setup = layout.displaySetups.first(where: { $0.displays == known.map(\.id).sorted() }) else { return nil }
         var result: [String: UInt64] = [:]
         for display in setup.arrangement {
@@ -323,7 +323,8 @@ extension Engine {
     }
 
     private static let unknownDisplaySetupReply = CommandReply(
-        text: "Nothing is saved for this Display Setup yet. Save first.", isError: true
+        text: "Nothing is saved for this Display Setup yet, so nothing was moved. Arrange things the way you want them here, then Save.",
+        isError: true
     )
 
     static func unknownHandleReply(_ handle: String) -> CommandReply {

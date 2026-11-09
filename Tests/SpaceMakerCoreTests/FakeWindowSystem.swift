@@ -75,6 +75,41 @@ final class FakeWindowSystem: WindowSystem {
         windows[index].desktopID = desktopID
     }
 
+    /// macOS undocking: the display's first desktop collapses into the built-in display's first,
+    /// taking its windows with it, and its other desktops are appended to the built-in display.
+    func undock(_ displayID: String) {
+        guard let index = displays.firstIndex(where: { $0.id == displayID }),
+              let builtIn = displays.firstIndex(where: \.isBuiltIn),
+              let laptopFirst = displays[builtIn].desktops.first?.id
+        else { return }
+        let gone = displays.remove(at: index)
+        let builtInIndex = displays.firstIndex(where: \.isBuiltIn)!
+        if let first = gone.desktops.first {
+            for window in windows.indices where windows[window].desktopID == first.id { windows[window].desktopID = laptopFirst }
+        }
+        displays[builtInIndex].desktops += gone.desktops.dropFirst().map { WindowSystemDesktop(id: $0.id, kind: $0.kind, isCurrent: false) }
+    }
+
+    /// macOS redocking, as unreliably as it does it: `display` comes back with its desktops in the order given.
+    /// Desktops it lists that are on the built-in display move back, windows and all; the others are new and empty.
+    func redock(_ display: WindowSystemDisplay) {
+        let returning = Set(display.desktops.map(\.id))
+        for index in displays.indices where displays[index].isBuiltIn {
+            displays[index].desktops.removeAll { returning.contains($0.id) }
+        }
+        displays.append(display)
+    }
+
+    /// A Guest Display disconnects. Its windows land on the built-in display's current desktop.
+    func disconnect(_ displayID: String) {
+        guard let index = displays.firstIndex(where: { $0.id == displayID }) else { return }
+        let gone = Set(displays.remove(at: index).desktops.map(\.id))
+        let landing = displays.first(where: \.isBuiltIn)?.desktops.first(where: \.isCurrent)?.id
+        for window in windows.indices where windows[window].desktopID.map(gone.contains) == true {
+            windows[window].desktopID = landing
+        }
+    }
+
     func desktop(of windowID: UInt32) -> UInt64? {
         windows.first { $0.id == windowID }?.desktopID
     }
@@ -85,8 +120,14 @@ extension WindowSystemDisplay {
         Self(id: "built-in", name: "Built-in Retina Display", isBuiltIn: true, desktops: desktops)
     }
 
-    static func external(_ id: String, name: String, desktops: [WindowSystemDesktop]) -> Self {
-        Self(id: id, name: name, isBuiltIn: false, desktops: desktops)
+    static func external(_ id: String, hardwareID: String? = nil, name: String, desktops: [WindowSystemDesktop]) -> Self {
+        Self(id: id, hardwareID: hardwareID, name: name, isBuiltIn: false, desktops: desktops)
+    }
+}
+
+extension WindowSystemDesktop {
+    static func regular(_ id: UInt64, current: Bool = false) -> Self {
+        Self(id: id, kind: .regular, isCurrent: current)
     }
 }
 

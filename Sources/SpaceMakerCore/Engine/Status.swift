@@ -1,6 +1,6 @@
 /// What `status` reports: the world as Space Maker sees it.
 public struct Status: Codable, Equatable, Sendable {
-    /// The connected known displays. Until Display Setups exist, that's the built-in display alone.
+    /// The connected known displays: the built-in one and every remembered one.
     public var displaySetup: [DisplayStatus]
     /// Connected displays that belong to no Display Setup.
     public var guestDisplays: [DisplayStatus]

@@ -66,13 +66,19 @@ extension Engine {
     /// `windows` are the standard windows; panels, dialogs and sheets never drift, and Ignored windows are skipped.
     func drift(displays: [WindowSystemDisplay], windows: [WindowSystemWindow]) -> (drift: [DriftStatus], softDrift: [SoftDriftStatus]) {
         forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
-        guard let desktops = resolvedSpaces(displays) else { return ([], []) }
+        guard let desktops = resolvedSpaces(displays) else {
+            return ([], [SoftDriftStatus(
+                handle: nil, app: nil, title: nil,
+                problem: "Nothing is saved for this Display Setup, so Space Maker won't move anything.",
+                hint: "Arrange the windows and desktops the way you want them here, then Save."
+            )])
+        }
         let spaceOf = Dictionary(layout.assignments.map { ($0.window, $0.space) }, uniquingKeysWith: { first, _ in first })
         var drift: [DriftStatus] = []
         var softDrift: [SoftDriftStatus] = []
 
         // Spaces this Display Setup's Arrangement has more of than its displays have desktops.
-        let setupKey = Self.knownDisplays(displays).map(\.id).sorted()
+        let setupKey = displaySetupKey(displays)
         let arranged = layout.displaySetups.first { $0.displays == setupKey }?.arrangement.flatMap(\.spaces) ?? []
         for space in arranged where desktops[space] == nil {
             softDrift.append(SoftDriftStatus(

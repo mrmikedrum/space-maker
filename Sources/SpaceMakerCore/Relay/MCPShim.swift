@@ -29,7 +29,7 @@ public struct MCPShim: Sendable {
     public static let notRunning = "Space Maker isn't running."
 
     public static let tools = [
-        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, which Space each desktop holds, and the handles of pinned windows. Displays other than the built-in one are Guest Displays for now. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
+        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, which Space each desktop holds, and the handles of pinned windows. The Display Setup is the built-in display plus every connected remembered display; any other display is a Guest Display, which Space Maker never puts anything on. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
         Tool(name: "save", description: "Save: record which Space every window is on, and the order of Spaces on each display, into the Layout. A desktop Space Maker hasn't seen before becomes a new Space named after its main app. Give a window handle to save just that window's Assignment as the Space it's on now.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\". Omit to save everything.", isRequired: false),
         ]),
@@ -48,6 +48,9 @@ public struct MCPShim: Sendable {
         Tool(name: "rename_space", description: "Rename a Space. Its windows stay assigned to it.", parameters: [
             Parameter(name: "space", kind: .string, description: "The Space's current name.", isRequired: true),
             Parameter(name: "name", kind: .string, description: "Its new name.", isRequired: true),
+        ]),
+        Tool(name: "remember_display", description: "Remember a Guest Display, so it joins the Display Setups: with it connected, Space Maker uses that Display Setup's own Arrangement. A new Display Setup has nothing saved, so Space Maker moves nothing until you arrange things there and Save.", parameters: [
+            Parameter(name: "display", kind: .string, description: "The Guest Display's id from status. Omit when exactly one Guest Display is connected.", isRequired: false),
         ]),
         Tool(name: "pin", description: "Pin a window: a live mirror of it floats above other windows on every regular Space, hidden while the window itself is visible. Clicking the mirror switches to the window. Fullscreen windows can't be pinned. Pins are temporary and never saved.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
