@@ -7,6 +7,8 @@ import Foundation
 public enum StandardDoctor {
     static let symbolsTitle = "Private SkyLight symbols"
     static let liveMoveTitle = "Live move test"
+    /// Pins depend on this check: when it doesn't pass, Pins are disabled.
+    public static let screenCaptureTitle = "Screen capture"
 
     public static func make(
         skyLight: SkyLight,
@@ -23,6 +25,7 @@ public enum StandardDoctor {
                 DoctorCheck(title: symbolsTitle) { symbols(skyLight) },
                 DoctorCheck(title: "Display and desktop enumeration") { enumeration(skyLight) },
                 DoctorCheck(title: "Chrome profiles") { chromeProfiles(windowSystem) },
+                DoctorCheck(title: screenCaptureTitle) { ScreenCaptureCheck.run() },
                 DoctorCheck(title: "Chrome Automation") { chromeAutomation() },
                 DoctorCheck(title: liveMoveTitle) { LiveMoveTest(skyLight: skyLight, helperExecutable: helperExecutable).run() },
             ],

@@ -1,12 +1,14 @@
 /// The single seam between the engine and macOS. `MacWindowSystem` is the real adapter; tests use a fake.
 ///
-/// Events and the clock join the port as later features need them.
+/// The clock joins the port as later features need it.
 @MainActor
 public protocol WindowSystem: AnyObject {
     /// Every connected display, with its desktops in Mission Control order.
     func readDisplays() -> [WindowSystemDisplay]
     /// Every window on any desktop.
     func readWindows() -> [WindowSystemWindow]
+    /// The focused window of the frontmost app, if it has one.
+    func readFrontmostWindow() -> UInt32?
 
     /// Moves a window to a native desktop. Returns false if the move didn't land.
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool
@@ -14,6 +16,21 @@ public protocol WindowSystem: AnyObject {
     /// Sets a Chrome window's name (Chrome's `given name`), which Chrome keeps across a relaunch.
     /// May ask the user for Automation permission.
     func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult
+
+    /// Where the port delivers events. The engine sets this when it's created.
+    var onEvent: (@MainActor (WindowSystemEvent) -> Void)? { get set }
+
+    /// Raises and focuses the window. Like macOS itself, this switches to the window's desktop first.
+    func focusWindow(_ windowID: UInt32)
+
+    // MARK: Pin mirrors
+
+    /// Shows the window's Pin mirror on every regular Space, starting it if needed.
+    func showPinMirror(of windowID: UInt32)
+    /// Hides the window's Pin mirror, keeping it ready to show again.
+    func hidePinMirror(of windowID: UInt32)
+    /// Removes the window's Pin mirror for good.
+    func stopPinMirror(of windowID: UInt32)
 }
 
 public enum WindowNamingResult: Equatable, Sendable {
@@ -21,6 +38,16 @@ public enum WindowNamingResult: Equatable, Sendable {
     /// The user hasn't allowed Space Maker to automate Chrome; the reason says how to fix it.
     case denied(String)
     case failed(String)
+}
+
+/// Something that happened in macOS that the engine reacts to.
+public enum WindowSystemEvent: Equatable, Sendable {
+    /// The desktop showing on some display changed. macOS doesn't say which.
+    case activeSpaceChanged
+    /// The user clicked the Pin mirror of this window (a click, not a drag).
+    case pinClicked(UInt32)
+    /// The window closed.
+    case windowClosed(UInt32)
 }
 
 public struct WindowSystemDisplay: Equatable, Sendable {

@@ -11,15 +11,29 @@ public struct Layout: Codable, Equatable, Sendable {
     public var spaces: [String]
     public var displaySetups: [DisplaySetupLayout]
     public var assignments: [Assignment]
+    /// Bundle IDs of apps the user always Ignores.
+    public var ignoredApps: [String]
 
     public init(
         version: Int = Layout.currentVersion, spaces: [String] = [],
-        displaySetups: [DisplaySetupLayout] = [], assignments: [Assignment] = []
+        displaySetups: [DisplaySetupLayout] = [], assignments: [Assignment] = [],
+        ignoredApps: [String] = []
     ) {
         self.version = version
         self.spaces = spaces
         self.displaySetups = displaySetups
         self.assignments = assignments
+        self.ignoredApps = ignoredApps
+    }
+
+    /// `ignoredApps` may be missing from a Layout written before Ignore existed, or trimmed by hand.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        spaces = try container.decode([String].self, forKey: .spaces)
+        displaySetups = try container.decode([DisplaySetupLayout].self, forKey: .displaySetups)
+        assignments = try container.decode([Assignment].self, forKey: .assignments)
+        ignoredApps = try container.decodeIfPresent([String].self, forKey: .ignoredApps) ?? []
     }
 }
 

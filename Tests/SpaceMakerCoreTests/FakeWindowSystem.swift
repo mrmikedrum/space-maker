@@ -7,8 +7,56 @@ final class FakeWindowSystem: WindowSystem {
     var displays: [WindowSystemDisplay] = []
     var windows: [WindowSystemWindow] = []
 
+    /// Pin mirrors that exist, by source window ID.
+    var mirrors: [UInt32: MirrorState] = [:]
+
+    enum MirrorState: Equatable { case shown, hidden }
+
     func readDisplays() -> [WindowSystemDisplay] { displays }
     func readWindows() -> [WindowSystemWindow] { windows }
+    func readFrontmostWindow() -> UInt32? { frontmostWindow }
+
+    private(set) var focusedWindow: UInt32?
+    /// The window the user is working in. Focusing a window makes it frontmost.
+    var frontmostWindow: UInt32?
+
+    var currentDesktops: [UInt64] { displays.flatMap { $0.desktops.filter(\.isCurrent).map(\.id) } }
+
+    /// The user clicks a Pin's mirror.
+    func clickMirror(of windowID: UInt32) {
+        guard mirrors[windowID] == .shown else { return }
+        onEvent?(.pinClicked(windowID))
+    }
+
+    func closeWindow(_ windowID: UInt32) {
+        windows.removeAll { $0.id == windowID }
+        onEvent?(.windowClosed(windowID))
+    }
+
+    /// Like macOS, focusing a window on another desktop switches to that desktop.
+    func focusWindow(_ windowID: UInt32) {
+        focusedWindow = windowID
+        frontmostWindow = windowID
+        if let desktop = windows.first(where: { $0.id == windowID })?.desktopID, !currentDesktops.contains(desktop) {
+            switchTo(desktop: desktop)
+        }
+    }
+
+    var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
+
+    /// The user switches desktops, as with Ctrl-arrow: the display showing `desktop` now shows it.
+    func switchTo(desktop: UInt64) {
+        for index in displays.indices where displays[index].desktops.contains(where: { $0.id == desktop }) {
+            for slot in displays[index].desktops.indices {
+                displays[index].desktops[slot].isCurrent = displays[index].desktops[slot].id == desktop
+            }
+        }
+        onEvent?(.activeSpaceChanged)
+    }
+
+    func showPinMirror(of windowID: UInt32) { mirrors[windowID] = .shown }
+    func hidePinMirror(of windowID: UInt32) { mirrors[windowID] = .hidden }
+    func stopPinMirror(of windowID: UInt32) { mirrors[windowID] = nil }
 
     /// Windows macOS refuses to move, as when the bridged move stops working.
     var unmovableWindows: Set<UInt32> = []

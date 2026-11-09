@@ -38,6 +38,9 @@ public final class SkyLight: @unchecked Sendable {
     private typealias CopyManagedDisplaySpacesFn = @convention(c) (Int32) -> Unmanaged<CFArray>?
     private typealias CopySpacesForWindowsFn = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
     private typealias PerformBridgedOperationFn = @convention(c) (UnsafeMutableRawPointer) -> Int64
+    private typealias SetFrontProcessFn = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UInt32, UInt32) -> Int32
+    private typealias PostEventRecordFn = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UnsafeMutablePointer<UInt8>) -> Int32
+    private typealias GetProcessForPIDFn = @convention(c) (pid_t, UnsafeMutablePointer<ProcessSerialNumber>) -> Int32
     private typealias InitMoveOperationFn = @convention(c) (UnsafeMutableRawPointer, Selector, CFArray, UInt64) -> UnsafeMutableRawPointer?
 
     private static let performBridgedOperationSymbol =
@@ -53,6 +56,9 @@ public final class SkyLight: @unchecked Sendable {
     private let performBridgedOperation: PerformBridgedOperationFn?
     private let moveOperationClass: AnyClass?
     private let moveOperationInit: InitMoveOperationFn?
+    private let setFrontProcess: SetFrontProcessFn?
+    private let postEventRecord: PostEventRecordFn?
+    private let getProcessForPID: GetProcessForPIDFn?
 
     public let symbols: [Symbol]
 
@@ -67,6 +73,11 @@ public final class SkyLight: @unchecked Sendable {
         mainConnectionID = exported("SLSMainConnectionID", as: MainConnectionIDFn.self)
         copyManagedDisplaySpaces = exported("SLSCopyManagedDisplaySpaces", as: CopyManagedDisplaySpacesFn.self)
         copySpacesForWindows = exported("SLSCopySpacesForWindows", as: CopySpacesForWindowsFn.self)
+        setFrontProcess = exported("_SLPSSetFrontProcessWithOptions", as: SetFrontProcessFn.self)
+        postEventRecord = exported("SLPSPostEventRecordTo", as: PostEventRecordFn.self)
+        // Deprecated but still the only way to get a process serial number; looked up to avoid the warning.
+        getProcessForPID = dlopen(nil, RTLD_LAZY).flatMap { dlsym($0, "GetProcessForPID") }
+            .map { unsafeBitCast($0, to: GetProcessForPIDFn.self) }
         performBridgedOperation = MachOSymbols.find(symbol: Self.performBridgedOperationSymbol, inImage: Self.imagePath)
             .map { unsafeBitCast($0, to: PerformBridgedOperationFn.self) }
 
@@ -85,6 +96,9 @@ public final class SkyLight: @unchecked Sendable {
             Symbol(name: "SLSPerformAsynchronousBridgedWindowManagementOperation (non-exported)", isPresent: performBridgedOperation != nil),
             Symbol(name: "class \(Self.moveOperationClassName)", isPresent: moveOperationClass != nil),
             Symbol(name: "-[\(Self.moveOperationClassName) \(Self.moveOperationInitializer)]", isPresent: moveOperationInit != nil),
+            Symbol(name: "_SLPSSetFrontProcessWithOptions", isPresent: setFrontProcess != nil),
+            Symbol(name: "SLPSPostEventRecordTo", isPresent: postEventRecord != nil),
+            Symbol(name: "GetProcessForPID", isPresent: getProcessForPID != nil),
         ]
     }
 
@@ -143,6 +157,32 @@ public final class SkyLight: @unchecked Sendable {
         withExtendedLifetime(operation) {
             _ = performBridgedOperation(Unmanaged.passUnretained(operation).toOpaque())
         }
+        return true
+    }
+
+    /// Brings a window of another app to the front and makes it key, switching to its desktop the way
+    /// clicking it in the Dock's window list does. Accessibility can't do this for windows on desktops
+    /// that aren't visible. Prior art: yabai `window_manager_focus_window_with_raise`.
+    /// Returns false if the calls are missing or fail.
+    public func focusWindow(_ windowID: UInt32, ownedBy pid: pid_t) -> Bool {
+        guard let setFrontProcess, let postEventRecord, let getProcessForPID else { return false }
+        var process = ProcessSerialNumber()
+        guard getProcessForPID(pid, &process) == 0 else { return false }
+        let userGenerated: UInt32 = 0x200
+        guard setFrontProcess(&process, windowID, userGenerated) == 0 else { return false }
+
+        // Two synthetic event records (mouse down, then up) make the window key.
+        var record = [UInt8](repeating: 0, count: 0xf8)
+        record[0x04] = 0xf8
+        record[0x3a] = 0x10
+        withUnsafeBytes(of: windowID.littleEndian) { bytes in
+            for (offset, byte) in bytes.enumerated() { record[0x3c + offset] = byte }
+        }
+        for offset in 0x20..<0x30 { record[offset] = 0xff }
+        record[0x08] = 0x01
+        _ = postEventRecord(&process, &record)
+        record[0x08] = 0x02
+        _ = postEventRecord(&process, &record)
         return true
     }
 

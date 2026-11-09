@@ -70,11 +70,12 @@ extension Engine {
     func save() -> CommandReply {
         withLayout {
             let displays = Self.knownDisplays(windowSystem.readDisplays())
-            var windows = windowSystem.readWindows().filter(\.isStandard)
+            let standard = windowSystem.readWindows().filter(\.isStandard)
+            var windows = standard.filter { !isIgnored($0) }  // Ignored windows keep whatever Assignment they had
             let setupKey = displays.map(\.id).sorted()
             let previous = layout.displaySetups.first { $0.displays == setupKey }
 
-            let matches = Self.match(windows, to: layout.assignments)
+            let matches = Self.match(standard, to: layout.assignments)
             var taken = Set<String>()
             var arrangement: [DisplayArrangement] = []
             var newSpaces: [String] = []
@@ -166,6 +167,38 @@ extension Engine {
         }
     }
 
+    /// Saves one window's Assignment as the Space it's on now, leaving every other Assignment alone.
+    func save(handle: String) -> CommandReply {
+        withLayout {
+            let displays = windowSystem.readDisplays()
+            guard resolvedSpaces(displays) != nil else { return Self.unknownDisplaySetupReply }
+            guard let window = window(withHandle: handle, in: windowSystem.readWindows().filter(\.isStandard)) else {
+                return Self.unknownHandleReply(handle)
+            }
+            guard !window.isFullscreen else {
+                return CommandReply(text: "\(handle) is fullscreen; Space Maker doesn't save fullscreen windows yet.", isError: true)
+            }
+            guard let space = window.desktopID.flatMap({ spaceNamesByDesktop(displays)[$0] }) else {
+                return CommandReply(text: "\(handle) isn't on a Space. Save everything to make its desktop a Space.", isError: true)
+            }
+            assign(window, to: space)
+            return committing("Saved \(handle) (\(window.appName) “\(window.title)”) on \(space).")
+        }
+    }
+
+    /// Replaces the window's Assignment, if it has one, with one for `space`.
+    func assign(_ window: WindowSystemWindow, to space: String) {
+        var identity = Self.identity(of: window)
+        let windows = windowSystem.readWindows().filter(\.isStandard)
+        if let old = Self.match(windows, to: layout.assignments)[window.id] {
+            // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
+            if identity.isChrome, identity.chromeProfile == nil { identity.chromeProfile = layout.assignments[old].window.chromeProfile }
+            layout.assignments.remove(at: old)
+        }
+        layout.assignments.append(Assignment(window: identity, space: space))
+        layout.assignments.sort { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
+    }
+
     // MARK: - Restore
 
     /// Restores every window with an Assignment, or just the window with `handle`.
@@ -177,8 +210,10 @@ extension Engine {
             let windows = windowSystem.readWindows().filter(\.isStandard)
             let matches = Self.match(windows, to: layout.assignments)
             let spaceOf = { (window: WindowSystemWindow) in matches[window.id].map { self.layout.assignments[$0].space } }
+            forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
+            defer { rememberWorldForSoftDrift() }
 
-            var targets = windows.filter { !$0.isFullscreen }
+            var targets = windows.filter { !$0.isFullscreen && !isIgnored($0) }
             if let handle {
                 guard let window = window(withHandle: handle, in: windows) else { return Self.unknownHandleReply(handle) }
                 guard spaceOf(window) != nil else {
@@ -189,6 +224,7 @@ extension Engine {
 
             var moved: [String] = []
             var problems: [String] = []
+            var notRetried: [String] = []
             for window in targets {
                 guard let space = spaceOf(window) else { continue }  // no Assignment: never moved
                 let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
@@ -197,16 +233,26 @@ extension Engine {
                     continue
                 }
                 if window.desktopID == target { continue }
+                // Soft Drift: a move that already failed isn't retried until the world changes, unless asked for by handle.
+                if handle == nil, failedMoves.contains(window.id) {
+                    notRetried.append(label)
+                    continue
+                }
                 if windowSystem.moveWindow(window.id, toDesktop: target) {
                     moved.append("\(label) → \(space)")
+                    failedMoves.remove(window.id)
                 } else {
                     problems.append("\(label): macOS didn't move it to \(space).")
+                    failedMoves.insert(window.id)
                 }
             }
 
             var lines = [moved.isEmpty ? "Everything was already on its Space." : "Moved \(moved.count) window\(moved.count == 1 ? "" : "s"):"]
             lines += moved.map { "- \($0)" }
             if !problems.isEmpty { lines += ["Couldn't restore:"] + problems.map { "- \($0)" } }
+            if !notRetried.isEmpty {
+                lines += ["Not retried until windows or desktops change (Soft Drift):"] + notRetried.map { "- \($0)" }
+            }
             return CommandReply(text: lines.joined(separator: "\n"), isError: handle != nil && !problems.isEmpty)
         }
     }
@@ -237,13 +283,7 @@ extension Engine {
             }
             guard save else { return CommandReply(text: "Moved \(handle) to \(space).") }
 
-            var identity = Self.identity(of: window)
-            if let old = Self.match(windows, to: layout.assignments)[window.id] {
-                if identity.isChrome, identity.chromeProfile == nil { identity.chromeProfile = layout.assignments[old].window.chromeProfile }
-                layout.assignments.remove(at: old)
-            }
-            layout.assignments.append(Assignment(window: identity, space: space))
-            layout.assignments.sort { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
+            assign(window, to: space)
             return committing("Moved \(handle) to \(space) and saved its Assignment.")
         }
     }

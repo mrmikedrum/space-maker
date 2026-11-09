@@ -5,6 +5,12 @@ public struct Status: Codable, Equatable, Sendable {
     /// Connected displays that belong to no Display Setup.
     public var guestDisplays: [DisplayStatus]
     public var windows: [WindowStatus]
+    /// Handles of the pinned windows, in the order they were pinned.
+    public var pins: [String]
+    /// Windows that differ from the Layout in a way Restore, Save or Ignore can settle.
+    public var drift: [DriftStatus]
+    /// Drift Space Maker can't fix itself; only the user can, by rearranging and then Saving.
+    public var softDrift: [SoftDriftStatus]
 }
 
 public struct DisplayStatus: Codable, Equatable, Sendable {
