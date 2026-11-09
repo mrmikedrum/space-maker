@@ -3,12 +3,18 @@ import Foundation
 /// One command sent to the app over the local socket, as one line of JSON (ADR 0002).
 public struct CommandRequest: Codable, Equatable, Sendable {
     public var command: String
-    /// The window a command acts on, by its handle from `status`.
-    public var window: String?
+    /// Named arguments, such as a window handle or a Space name. Never coordinates.
+    public var arguments: [String: String]
 
-    public init(command: String, window: String? = nil) {
+    public init(command: String, arguments: [String: String] = [:]) {
         self.command = command
-        self.window = window
+        self.arguments = arguments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        command = try container.decode(String.self, forKey: .command)
+        arguments = try container.decodeIfPresent([String: String].self, forKey: .arguments) ?? [:]
     }
 }
 

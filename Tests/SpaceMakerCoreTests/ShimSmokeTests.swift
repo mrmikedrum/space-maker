@@ -10,7 +10,7 @@ struct ShimSmokeTests {
         let world = FakeWindowSystem()
         world.displays = [.builtIn(desktops: [.init(id: 11, kind: .regular, isCurrent: true)])]
         world.windows = [.app(7, "com.ticktick.task.mac", "TickTick", title: "Today", desktop: 11)]
-        let engine = Engine(windowSystem: world)
+        let engine = Engine(windowSystem: world, layoutURL: .temporaryLayout())
         let socket = Self.temporarySocketPath()
         let server = try CommandServer.start(socketPath: socket) { request in await engine.perform(request) }
         defer { server.stop() }
@@ -26,13 +26,13 @@ struct ShimSmokeTests {
         let world = FakeWindowSystem()
         world.displays = [.builtIn(desktops: [.init(id: 11, kind: .regular, isCurrent: true), .init(id: 12, kind: .regular, isCurrent: false)])]
         world.windows = [.app(7, "com.ticktick.task.mac", "TickTick", title: "Today", desktop: 12)]
-        let engine = Engine(windowSystem: world)
+        let engine = Engine(windowSystem: world, layoutURL: .temporaryLayout())
         _ = engine.status()
         let socket = Self.temporarySocketPath()
         let server = try CommandServer.start(socketPath: socket) { request in await engine.perform(request) }
         defer { server.stop() }
 
-        let result = await MCPShim(socketPath: socket).callTool(named: "pin", window: "w1")
+        let result = await MCPShim(socketPath: socket).callTool(named: "pin", arguments: ["window": "w1"])
 
         #expect(!result.isError)
         #expect(result.text == "Pinned TickTick \"Today\" (w1).")
@@ -49,5 +49,20 @@ struct ShimSmokeTests {
     /// Unix socket paths are capped at 104 bytes, so keep it short.
     static func temporarySocketPath() -> String {
         FileManager.default.temporaryDirectory.appendingPathComponent("sm-\(UUID().uuidString.prefix(8)).sock").path
+    }
+}
+
+extension ShimSmokeTests {
+    @Test func toolArgumentsMakeTheTripToo() async throws {
+        let world = FakeWindowSystem()
+        let engine = Engine(windowSystem: world, layoutURL: .temporaryLayout())
+        let socket = Self.temporarySocketPath()
+        let server = try CommandServer.start(socketPath: socket) { request in await engine.perform(request) }
+        defer { server.stop() }
+
+        let result = await MCPShim(socketPath: socket).callTool(named: "rename_space", arguments: ["space": "Nowhere", "name": "Code"])
+
+        #expect(result.isError)
+        #expect(result.text.contains("“Nowhere”"))
     }
 }

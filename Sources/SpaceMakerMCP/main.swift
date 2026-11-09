@@ -13,19 +13,33 @@ let server = Server(
 
 await server.withMethodHandler(ListTools.self) { _ in
     .init(tools: MCPShim.tools.map { tool in
-        let schema: Value = tool.takesWindow
-            ? .object([
-                "type": "object",
-                "properties": .object(["window": .object(["type": "string", "description": "The window's handle from status, such as \"w3\"."])]),
-                "required": .array(["window"]),
-            ])
-            : .object(["type": "object", "properties": .object([:])])
-        return Tool(name: tool.name, description: tool.description, inputSchema: schema)
+        var properties: [String: Value] = [:]
+        for parameter in tool.parameters {
+            properties[parameter.name] = .object(["type": .string(parameter.kind.rawValue), "description": .string(parameter.description)])
+        }
+        return Tool(name: tool.name, description: tool.description, inputSchema: .object([
+            "type": "object",
+            "properties": .object(properties),
+            "required": .array(tool.parameters.filter(\.isRequired).map { .string($0.name) }),
+            "additionalProperties": false,
+        ]))
     })
 }
 
+/// The app's command interface takes string arguments.
+func text(_ value: Value) -> String? {
+    switch value {
+    case .string(let string): string
+    case .bool(let bool): bool ? "true" : "false"
+    case .int(let int): String(int)
+    case .double(let double): String(double)
+    default: nil
+    }
+}
+
 await server.withMethodHandler(CallTool.self) { params in
-    let result = await shim.callTool(named: params.name, window: params.arguments?["window"]?.stringValue)
+    let arguments = (params.arguments ?? [:]).compactMapValues(text)
+    let result = await shim.callTool(named: params.name, arguments: arguments)
     return .init(content: [.text(result.text)], isError: result.isError)
 }
 

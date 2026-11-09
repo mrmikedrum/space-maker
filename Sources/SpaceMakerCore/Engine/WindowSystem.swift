@@ -1,6 +1,6 @@
 /// The single seam between the engine and macOS. `MacWindowSystem` is the real adapter; tests use a fake.
 ///
-/// Actions, events and the clock join the port as features need them.
+/// The clock joins the port as later features need it.
 @MainActor
 public protocol WindowSystem: AnyObject {
     /// Every connected display, with its desktops in Mission Control order.
@@ -9,6 +9,9 @@ public protocol WindowSystem: AnyObject {
     func readWindows() -> [WindowSystemWindow]
     /// The focused window of the frontmost app, if it has one.
     func readFrontmostWindow() -> UInt32?
+
+    /// Moves a window to a native desktop. Returns false if the move didn't land.
+    func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool
 
     /// Where the port delivers events. The engine sets this when it's created.
     var onEvent: (@MainActor (WindowSystemEvent) -> Void)? { get set }

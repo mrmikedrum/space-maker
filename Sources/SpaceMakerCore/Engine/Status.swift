@@ -26,11 +26,14 @@ public struct DesktopStatus: Codable, Equatable, Sendable {
     public var number: Int
     public var kind: DesktopKind
     public var isCurrent: Bool
+    /// The Space this desktop's position holds in the saved Arrangement, if any.
+    public var space: String?
 
-    public init(number: Int, kind: DesktopKind, isCurrent: Bool) {
+    public init(number: Int, kind: DesktopKind, isCurrent: Bool, space: String? = nil) {
         self.number = number
         self.kind = kind
         self.isCurrent = isCurrent
+        self.space = space
     }
 }
 

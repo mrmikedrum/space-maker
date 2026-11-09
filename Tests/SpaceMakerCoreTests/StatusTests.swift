@@ -12,7 +12,7 @@ struct StatusTests {
             .init(id: 13, kind: .regular, isCurrent: false),
         ])]
 
-        let status = Engine(windowSystem: world).status()
+        let status = Engine(windowSystem: world, layoutURL: .temporaryLayout()).status()
 
         #expect(status.displaySetup == [
             DisplayStatus(id: "built-in", name: "Built-in Retina Display", desktops: [
@@ -34,7 +34,7 @@ struct StatusTests {
             .app(502, "com.apple.Terminal", "Terminal", title: "zsh", desktop: 12, fullscreen: true),
         ]
 
-        let status = Engine(windowSystem: world).status()
+        let status = Engine(windowSystem: world, layoutURL: .temporaryLayout()).status()
 
         #expect(status.windows == [
             WindowStatus(handle: "w1", app: "TickTick", bundleID: "com.ticktick.task.mac", chromeProfile: nil,
@@ -54,7 +54,7 @@ struct StatusTests {
         ]
         world.windows = [.app(501, "com.apple.Safari", "Safari", title: "News", desktop: 22)]
 
-        let status = Engine(windowSystem: world).status()
+        let status = Engine(windowSystem: world, layoutURL: .temporaryLayout()).status()
 
         #expect(status.displaySetup.map(\.id) == ["built-in"])
         #expect(status.guestDisplays == [
@@ -74,7 +74,7 @@ struct StatusTests {
             .app(603, "com.apple.Safari", "Safari", title: "News", desktop: 11),
         ]
 
-        let status = Engine(windowSystem: world).status()
+        let status = Engine(windowSystem: world, layoutURL: .temporaryLayout()).status()
 
         #expect(status.windows.map(\.chromeProfile) == ["Work", "unknown", nil])
     }
@@ -85,7 +85,7 @@ struct StatusTests {
             .app(501, "com.apple.Safari", "Safari", title: "News", desktop: 11),
             .app(502, "com.apple.Notes", "Notes", title: "List", desktop: 11),
         ]
-        let engine = Engine(windowSystem: world)
+        let engine = Engine(windowSystem: world, layoutURL: .temporaryLayout())
         #expect(engine.status().windows.map(\.handle) == ["w1", "w2"])
 
         world.windows = [
@@ -103,7 +103,7 @@ struct StatusTests {
             .app(502, "com.apple.Safari", "Safari", title: "Downloads", desktop: 11, isStandard: false),
         ]
 
-        let status = Engine(windowSystem: world).status()
+        let status = Engine(windowSystem: world, layoutURL: .temporaryLayout()).status()
 
         #expect(status.windows.map(\.title) == ["News"])
     }
