@@ -1,6 +1,6 @@
+import Foundation
+
 /// The single seam between the engine and macOS. `MacWindowSystem` is the real adapter; tests use a fake.
-///
-/// The clock joins the port as later features need it.
 @MainActor
 public protocol WindowSystem: AnyObject {
     /// Every connected display, with its desktops in Mission Control order.
@@ -22,6 +22,9 @@ public protocol WindowSystem: AnyObject {
 
     /// Where the port delivers events. The engine sets this when it's created.
     var onEvent: (@MainActor (WindowSystemEvent) -> Void)? { get set }
+
+    /// The clock: runs `action` on the main actor once `delay` seconds have passed.
+    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void)
 
     /// Raises and focuses the window. Like macOS itself, this switches to the window's desktop first.
     func focusWindow(_ windowID: UInt32)
@@ -53,6 +56,9 @@ public enum WindowSystemEvent: Equatable, Sendable {
     case windowAppeared(UInt32)
     /// The window closed.
     case windowClosed(UInt32)
+    /// Displays were connected, disconnected or rearranged. macOS sends these in bursts while it
+    /// rearranges desktops, so they say only that something changed.
+    case displaysReconfigured
 }
 
 public struct WindowSystemDisplay: Equatable, Sendable {

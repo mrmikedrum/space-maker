@@ -42,6 +42,9 @@ public final class Engine {
     /// Why moving windows is disabled, if the Doctor says it doesn't work.
     var movesDisabledReason: String?
 
+    /// Progress towards the automatic Restore after a display change.
+    var displayChange = DisplayChangeProgress()
+
     /// `layoutURL` is where the Layout file lives (`LayoutFile.defaultURL` in the app).
     /// `runDoctor` runs the Doctor and returns its markdown report.
     public init(
@@ -72,6 +75,8 @@ public final class Engine {
         case .windowClosed(let windowID):
             appearedWindows.remove(windowID)
             unpin(windowID)
+        case .displaysReconfigured:
+            displaysReconfigured()
         }
     }
 

@@ -14,6 +14,7 @@ public final class MacWindowSystem: WindowSystem {
     public var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
     var mirrors: [UInt32: PinMirror] = [:]
     private var activeSpaceObserver: NSObjectProtocol?
+    private var screenParametersObserver: NSObjectProtocol?
     private var appearanceObserver: WindowAppearanceObserver?
 
     /// Where each Chrome window's profile came from on the last read, for the Doctor.
@@ -43,6 +44,20 @@ public final class MacWindowSystem: WindowSystem {
         }
         appearanceObserver = WindowAppearanceObserver { [weak self] windowID in
             self?.onEvent?(.windowAppeared(windowID))
+        }
+        // Posted for every connect, disconnect and rearrangement, often several times per change.
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onEvent?(.displaysReconfigured) }
+        }
+    }
+
+    // MARK: - Clock
+
+    public func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            MainActor.assumeIsolated { action() }
         }
     }
 

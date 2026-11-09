@@ -3,7 +3,7 @@ extension Engine {
     func pause() -> CommandReply {
         guard !isPaused else { return CommandReply(text: "Space Maker is already paused.") }
         isPaused = true
-        return CommandReply(text: "Paused: windows that appear stay where they are until you resume.")
+        return CommandReply(text: "Paused: windows that appear stay where they are, and display changes don’t Restore, until you resume.")
     }
 
     func resume() -> CommandReply {
