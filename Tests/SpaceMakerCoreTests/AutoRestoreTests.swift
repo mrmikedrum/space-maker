@@ -115,6 +115,28 @@ struct AutoRestoreTests {
         #expect(!engine.status().softDrift.contains { $0.problem.contains("settle") })
     }
 
+    @Test func aWindowWithoutASavedPositionThatMacOSShovesAsideDuringADisplayChangeGoesBackWhereItWas() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)
+        let before = WindowFrame(x: 1700, y: 100, width: 800, height: 600)
+        world.openWindow(.app(505, "com.apple.Preview", "Preview", title: "Notes.pdf", desktop: 21, frame: before))
+        let elsewhere = WindowFrame(x: 1512, y: 25, width: 800, height: 600)
+        world.windows.append(.app(506, "com.apple.TextEdit", "TextEdit", title: "List", desktop: 11, frame: elsewhere))
+
+        // An AirPlay screen connects; while macOS rearranges, it shoves Preview into a corner of the Dell, and
+        // TextEdit off the laptop onto the Dell.
+        world.reconfigureDisplays()
+        world.displays.append(.external("airplay-uuid", name: "Living Room TV", desktops: [.regular(31, current: true)]))
+        world.place(505, at: WindowFrame(x: 1512, y: 25, width: 800, height: 600))
+        world.move(506, to: 21)
+        world.place(506, at: WindowFrame(x: 2000, y: 300, width: 800, height: 600))
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+
+        #expect(world.window(505)?.frame == before)  // back where it was on the same display
+        #expect(world.window(506)?.frame == WindowFrame(x: 2000, y: 300, width: 800, height: 600))  // another display now: left alone
+    }
+
     @Test func whenAGuestDisplaySessionEndsWindowsMovedOntoItGoHome() throws {
         world.displays = [.builtIn(desktops: [.regular(11, current: true), .regular(12)])]
         world.windows = [
