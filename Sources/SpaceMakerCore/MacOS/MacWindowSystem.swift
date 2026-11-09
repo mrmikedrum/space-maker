@@ -35,6 +35,15 @@ public final class MacWindowSystem: WindowSystem {
     public private(set) var chromeProfileSources: [UInt32: ChromeProfileSource] = [:]
     /// Profiles read earlier, so a window keeps its profile after moving to a hidden desktop. Window IDs live as long as their window.
     private var rememberedProfiles: [UInt32: String] = [:]
+    /// Chrome windows whose profile button shows only the managed-account badge; a window's profile never changes.
+    private var badgedWindows: Set<UInt32> = []
+    /// Chrome's given window names by window ID, with the title and bounds they were matched on. Chrome is only
+    /// asked again (AppleScript, ~50 ms) when a Chrome window is new or its title or bounds changed.
+    private var chromeNames: [UInt32: (title: String, bounds: CGRect, name: String?)] = [:]
+    /// The last read of the world, reused for `readCacheLifetime` so one command doesn't read it several times.
+    /// Anything that changes windows forgets it.
+    private var readCache: (at: Date, windows: [WindowSystemWindow])?
+    private static let readCacheLifetime: TimeInterval = 0.25
     /// Chrome windows' bounds and titles on the last read, to find them again through AppleScript.
     private var chromeWindowFrames: [UInt32: (title: String, bounds: CGRect)] = [:]
 
@@ -43,16 +52,23 @@ public final class MacWindowSystem: WindowSystem {
         activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.onEvent?(.activeSpaceChanged) }
+            MainActor.assumeIsolated {
+                self?.worldChanged()
+                self?.onEvent?(.activeSpaceChanged)
+            }
         }
         appearanceObserver = WindowAppearanceObserver { [weak self] windowID in
+            self?.worldChanged()
             self?.onEvent?(.windowAppeared(windowID))
         }
         // Posted for every connect, disconnect and rearrangement, often several times per change.
         screenParametersObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.onEvent?(.displaysReconfigured) }
+            MainActor.assumeIsolated {
+                self?.worldChanged()
+                self?.onEvent?(.displaysReconfigured)
+            }
         }
     }
 
@@ -141,6 +157,16 @@ public final class MacWindowSystem: WindowSystem {
     }
 
     public func readWindows() -> [WindowSystemWindow] {
+        if let readCache, Date().timeIntervalSince(readCache.at) < Self.readCacheLifetime { return readCache.windows }
+        let windows = Log.timed(Log.adapter, "readWindows") { readWindowsNow() }
+        readCache = (Date(), windows)
+        return windows
+    }
+
+    /// Forgets the last read of the world, after anything that changes windows.
+    private func worldChanged() { readCache = nil }
+
+    private func readWindowsNow() -> [WindowSystemWindow] {
         var desktopKinds: [UInt64: DesktopKind] = [:]
         for display in readDisplays() {
             for desktop in display.desktops { desktopKinds[desktop.id] = desktop.kind }
@@ -175,8 +201,13 @@ public final class MacWindowSystem: WindowSystem {
                 (profile, profileSources[windowID]) = chromeProfile(windowID, accessibility: accessibility)
                 let bounds = bounds ?? .zero
                 chromeFrames[windowID] = (title, bounds)
-                if chromeScriptWindows == nil { chromeScriptWindows = ChromeScripting.windows() ?? [] }
-                name = chromeScriptWindows?.first { $0.title == title && $0.bounds == bounds }?.givenName
+                if let known = chromeNames[windowID], known.title == title, known.bounds == bounds {
+                    name = known.name
+                } else {
+                    if chromeScriptWindows == nil { chromeScriptWindows = ChromeScripting.windows() ?? [] }
+                    name = chromeScriptWindows?.first { $0.title == title && $0.bounds == bounds }?.givenName
+                    chromeNames[windowID] = (title, bounds, name)
+                }
             }
 
             windows.append(WindowSystemWindow(
@@ -209,12 +240,16 @@ public final class MacWindowSystem: WindowSystem {
     }
 
     private func chromeProfile(_ windowID: UInt32, accessibility: AccessibilityWindow?) -> (ChromeProfile, ChromeProfileSource) {
+        // A window's profile never changes, so the toolbar is only walked until it has been read once.
+        if let profile = rememberedProfiles[windowID] { return (.known(profile), accessibility == nil ? .remembered : .read) }
+        if badgedWindows.contains(windowID) { return (.unknown, .managedBadge) }
         if let accessibility {
             switch ChromeProfileReader.profile(of: accessibility.element) {
             case .known(let profile)?:
                 rememberedProfiles[windowID] = profile
                 return (.known(profile), .read)
             case .unknown?:
+                badgedWindows.insert(windowID)
                 return (.unknown, .managedBadge)
             default:
                 break
@@ -232,6 +267,7 @@ public final class MacWindowSystem: WindowSystem {
 
     /// The bridged move is asynchronous, so this polls until the window is on the target desktop.
     public func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
+        defer { worldChanged() }
         guard skyLight.moveWindow(windowID, toDesktop: desktopID) else { return false }
         let deadline = Date().addingTimeInterval(Self.moveSettleTimeout)
         repeat {
@@ -247,6 +283,7 @@ public final class MacWindowSystem: WindowSystem {
     /// Sets Accessibility's `AXFullScreen`, then polls until the window sits on a desktop of the new kind.
     /// Accessibility only reaches windows on visible desktops, so a window on a hidden one can't be changed.
     public func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool {
+        defer { worldChanged() }
         guard let info = Self.windowInfo(windowID),
               let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
               let element = Self.element(of: windowID, ownedBy: pid)
@@ -280,6 +317,8 @@ public final class MacWindowSystem: WindowSystem {
 
     /// Finds the window through Chrome's AppleScript by its title and bounds, since AppleScript window IDs aren't WindowServer IDs.
     public func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult {
+        worldChanged()
+        chromeNames[windowID] = nil
         guard let frame = chromeWindowFrames[windowID] else { return .failed("Space Maker hasn't seen that Chrome window.") }
         return ChromeScripting.setName(name, ofWindowTitled: frame.title, bounds: frame.bounds)
     }
@@ -331,6 +370,10 @@ enum ChromeProfileReader {
     private static let maxDepth = 10
 
     static func profile(of window: AXUIElement) -> ChromeProfile? {
+        Log.timed(Log.adapter, "Chrome profile button walk") { profileNow(of: window) }
+    }
+
+    private static func profileNow(of window: AXUIElement) -> ChromeProfile? {
         let names = profileNames()
         if names.count == 1 { return .known(names[0]) }
         guard !names.isEmpty else { return nil }
@@ -422,20 +465,32 @@ extension MacWindowSystem {
         return PrivateAccessibility.windowID(of: window)
     }
 
+    /// With SIP on, SkyLight's front-process call makes the window key but doesn't switch desktops. So the window
+    /// is also made its app's main window and raised (reached on any desktop), then the app is activated: macOS
+    /// switches to the desktop holding an activated app's main window.
     public func focusWindow(_ windowID: UInt32) {
+        defer { worldChanged() }
         guard let info = Self.windowInfo(windowID),
               let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value
-        else { return }
-        if skyLight.focusWindow(windowID, ownedBy: pid) { return }
-        // Fallback: activating the app switches to a desktop with one of its windows, maybe not this one.
-        NSRunningApplication(processIdentifier: pid)?.activate()
-        if let element = Self.accessibilityWindows(pid: pid)[windowID]?.element {
-            AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        else {
+            Log.adapter.error("focusWindow \(windowID, privacy: .public): window is gone")
+            return
+        }
+        Log.timed(Log.adapter, "focusWindow \(windowID)") {
+            let front = skyLight.focusWindow(windowID, ownedBy: pid)
+            var raised = false
+            if let element = Self.element(of: windowID, ownedBy: pid) {
+                AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+                raised = AXUIElementPerformAction(element, kAXRaiseAction as CFString) == .success
+            }
+            let activated = NSRunningApplication(processIdentifier: pid)?.activate() ?? false
+            Log.adapter.info("focusWindow \(windowID, privacy: .public): front=\(front, privacy: .public) raised=\(raised, privacy: .public) activated=\(activated, privacy: .public)")
         }
     }
 
     /// Sets the frame through Accessibility, which only reaches windows on desktops currently showing.
     public func setFrame(_ windowID: UInt32, to frame: WindowFrame) -> Bool {
+        defer { worldChanged() }
         guard let pid = (Self.windowInfo(windowID)?[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
               let element = Self.element(of: windowID, ownedBy: pid)
         else { return false }

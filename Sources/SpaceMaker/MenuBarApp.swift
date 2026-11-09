@@ -74,7 +74,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Rebuilt each time it opens, so Drift is current.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        let status = engine.status()
+        let status = Log.timed(Log.menu, "menu status") { engine.status() }
         showIcon(driftCount: status.drift.count)
         menu.removeAllItems()
         menu.addItem(menuItem("Save All", #selector(saveAllClicked)))
@@ -344,6 +344,6 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func log(_ message: String) {
-        FileHandle.standardError.write(Data("Space Maker: \(message)\n".utf8))
+        Log.menu.error("\(message, privacy: .public)")
     }
 }

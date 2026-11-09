@@ -47,6 +47,10 @@ enum ChromeScripting {
 
     /// Every Chrome window's given name, title and bounds, or nil if Chrome can't be asked without prompting.
     static func windows() -> [ScriptWindow]? {
+        Log.timed(Log.adapter, "Chrome AppleScript window list") { windowsNow() }
+    }
+
+    private static func windowsNow() -> [ScriptWindow]? {
         guard permission(ask: false) == .granted else { return nil }
         let source = """
         tell application id "\(MacWindowSystem.chromeBundleID)"

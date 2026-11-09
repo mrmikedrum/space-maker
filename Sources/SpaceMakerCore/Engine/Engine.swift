@@ -79,6 +79,7 @@ public final class Engine {
         case .activeSpaceChanged:
             refreshPins()
         case .pinClicked(let windowID):
+            Log.pins.info("Pin clicked for window \(windowID, privacy: .public); pinned: \(self.pins.contains(windowID), privacy: .public)")
             guard pins.contains(windowID) else { return }
             windowSystem.focusWindow(windowID)
         case .windowAppeared(let windowID):
@@ -93,6 +94,10 @@ public final class Engine {
 
     /// The command interface the socket relay and the menu bar share.
     public func perform(_ request: CommandRequest) -> CommandReply {
+        Log.timed(Log.engine, "command \(request.command)") { performNow(request) }
+    }
+
+    private func performNow(_ request: CommandRequest) -> CommandReply {
         defer { noteStableFrames() }
         if isMovingWindows, request.command != "status" {
             return CommandReply(text: "Space Maker is in the middle of moving windows. Try again in a moment.", isError: true)
@@ -242,6 +247,10 @@ public final class Engine {
     }
 
     public func status() -> Status {
+        Log.timed(Log.engine, "status") { statusNow() }
+    }
+
+    private func statusNow() -> Status {
         reloadLayoutIfChanged()
         let displays = windowSystem.readDisplays()
         let spaces = spaceNamesByDesktop(displays)
