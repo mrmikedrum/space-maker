@@ -12,7 +12,17 @@ final class FakeWindowSystem: WindowSystem {
 
     enum MirrorState: Equatable { case shown, hidden }
 
-    func readDisplays() -> [WindowSystemDisplay] { displays }
+    /// Reads still to come while macOS is rearranging desktops after a reconfiguration. Each one sees
+    /// a different half-finished set of desktops, and macOS refuses moves meanwhile.
+    var unsettledReads = 0
+
+    func readDisplays() -> [WindowSystemDisplay] {
+        guard unsettledReads > 0, !displays.isEmpty else { return displays }
+        unsettledReads -= 1
+        var halfway = displays
+        halfway[0].desktops.append(.regular(9000 + UInt64(unsettledReads)))
+        return halfway
+    }
     func readWindows() -> [WindowSystemWindow] { windows }
     func readFrontmostWindow() -> UInt32? { frontmostWindow }
 
@@ -44,6 +54,18 @@ final class FakeWindowSystem: WindowSystem {
 
     var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
 
+    /// Time in the fake world. It only moves when a test advances it; tests never sleep.
+    let clock = FakeClock()
+
+    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) {
+        clock.schedule(after: delay, action)
+    }
+
+    /// macOS reports that displays were reconfigured (connected, disconnected or rearranged).
+    func reconfigureDisplays() {
+        onEvent?(.displaysReconfigured)
+    }
+
     /// The user switches desktops, as with Ctrl-arrow: the display showing `desktop` now shows it.
     func switchTo(desktop: UInt64) {
         for index in displays.indices where displays[index].desktops.contains(where: { $0.id == desktop }) {
@@ -62,7 +84,7 @@ final class FakeWindowSystem: WindowSystem {
     var unmovableWindows: Set<UInt32> = []
 
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
-        guard !unmovableWindows.contains(windowID),
+        guard unsettledReads == 0, !unmovableWindows.contains(windowID),
               displays.contains(where: { $0.desktops.contains { $0.id == desktopID } })
         else { return false }
         move(windowID, to: desktopID)
@@ -188,5 +210,29 @@ extension URL {
     /// A Layout file location of its own, so tests never touch the user's real Layout.
     static func temporaryLayout() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("space-maker-tests-\(UUID().uuidString)/layout.json")
+    }
+}
+
+/// A clock that runs scheduled work only when a test advances it.
+@MainActor
+final class FakeClock {
+    private(set) var now: TimeInterval = 0
+    private var pending: [(at: TimeInterval, order: Int, action: @MainActor () -> Void)] = []
+    private var lastOrder = 0
+
+    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) {
+        lastOrder += 1
+        pending.append((now + max(0, delay), lastOrder, action))
+    }
+
+    /// Moves time forward, running everything that falls due, in order, including work scheduled meanwhile.
+    func advance(by interval: TimeInterval) {
+        let end = now + interval
+        while let next = pending.filter({ $0.at <= end }).min(by: { ($0.at, $0.order) < ($1.at, $1.order) }) {
+            pending.removeAll { $0.order == next.order }
+            now = next.at
+            next.action()
+        }
+        now = end
     }
 }
