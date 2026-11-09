@@ -183,6 +183,36 @@ struct FullscreenTests {
         #expect(world.fullscreenChanges.isEmpty)
     }
 
+    @Test func aSavedFullscreenChromeWindowThatComesBackNormalIsPlacedBackInFullscreenAtItsPlace() throws {
+        laptopAlone()
+        let engine = engine()
+        try engine.run("save")
+
+        // Chrome quits, taking Work main and its fullscreen desktop with it, and brings it back as a normal window.
+        world.closeWindow(604)
+        world.displays[0].desktops.removeAll { $0.id == 902 }
+        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 11))
+
+        #expect(world.window(1604)?.isFullscreen == true)
+        #expect(world.order(of: "built-in") == ["fullscreen 601", "11", "12", "13", "fullscreen 1604"])
+        #expect(engine.status().drift.isEmpty)
+    }
+
+    @Test func aWindowThatAppearsAlreadyFullscreenOnTheWrongDisplayIsPlacedOnItsOwn() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)  // Work main belongs fullscreen at the end of the Dell
+
+        // Work main comes back fullscreen, but on the laptop.
+        world.closeWindow(604)
+        world.displays[1].desktops.removeAll { $0.id == 902 }
+        world.displays[0].desktops.append(.fullscreen(903))
+        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 903, fullscreen: true))
+
+        #expect(world.window(1604)?.isFullscreen == true)
+        #expect(world.order(of: "dell-uuid") == ["21", "22", "fullscreen 1604"])
+        #expect(engine.status().drift.isEmpty)
+    }
+
     @Test func aSpaceCantBeRenamedToAFullscreenWindowsPlace() throws {
         laptopAlone()
         let engine = engine()

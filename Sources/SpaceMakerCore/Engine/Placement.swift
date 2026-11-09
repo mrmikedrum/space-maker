@@ -12,7 +12,8 @@ extension Engine {
         return CommandReply(text: "Resumed: windows that appear go to their Space again.")
     }
 
-    /// Moves a window that just appeared to the Space its Assignment names, and to its saved position there.
+    /// Moves a window that just appeared to the Space its Assignment names, and to its saved position there,
+    /// or for a fullscreen Assignment back into fullscreen at its place in the Arrangement.
     /// A window with no Assignment, an Ignored window, or one already in place is left alone.
     /// Each window gets one chance in its life, even if macOS reports it again, so a window the user
     /// moves after it was placed (or that appeared while paused) is never moved back automatically.
@@ -26,11 +27,24 @@ extension Engine {
         reloadLayoutIfChanged()
         guard layoutProblem == nil, movesDisabledReason == nil else { return }
         let displays = windowSystem.readDisplays()
-        guard let desktops = resolvedSpaces(displays), !window.isFullscreen, !isIgnored(window),
-              let index = Self.match(windows, to: layout.assignments)[windowID],
-              let target = desktops[layout.assignments[index].space]
+        guard let desktops = resolvedSpaces(displays), !isIgnored(window),
+              let index = Self.match(windows, to: layout.assignments)[windowID]
         else { return }
-        let plan = plan(window, layout.assignments[index], on: target, displays: knownDisplays(displays))
+        let assignment = layout.assignments[index]
+
+        // A fullscreen Assignment goes back to its place in the Arrangement, whether the window came back
+        // fullscreen (perhaps on the wrong display) or as a normal window.
+        if assignment.window.isFullscreen {
+            guard let place = fullscreenPlaces(displays)[assignment.space],
+                  !(window.isFullscreen && place.display.desktops.contains { $0.id == window.desktopID })
+            else { return }
+            forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
+            if restoreFullscreen(window, to: place) == false { failedMoves.insert(windowID) } else { failedMoves.remove(windowID) }
+            rememberWorldForSoftDrift()
+            return
+        }
+        guard !window.isFullscreen, let target = desktops[assignment.space] else { return }
+        let plan = plan(window, assignment, on: target, displays: knownDisplays(displays))
         guard plan.isNeeded else { return }
         forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
         _ = carryOut(plan, for: windowID)  // a failure is Soft Drift, like a failed Restore
