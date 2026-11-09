@@ -83,7 +83,11 @@ final class FakeWindowSystem: WindowSystem {
     /// Windows macOS refuses to move, as when the bridged move stops working.
     var unmovableWindows: Set<UInt32> = []
 
+    /// How many times anything asked macOS to move a window between desktops.
+    private(set) var moveAttempts = 0
+
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
+        moveAttempts += 1
         guard unsettledReads == 0, !unmovableWindows.contains(windowID),
               displays.contains(where: { $0.desktops.contains { $0.id == desktopID } })
         else { return false }

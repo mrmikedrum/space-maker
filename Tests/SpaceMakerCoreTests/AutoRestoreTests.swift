@@ -92,6 +92,29 @@ struct AutoRestoreTests {
         #expect(status.softDrift.isEmpty)
     }
 
+    @Test func desktopsThatNeverSettleGetNoRestoreAndSaySoUntilTheNextChange() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)
+        let moves = world.moveAttempts
+
+        world.undock("dell-uuid")
+        world.unsettledReads = 1000  // macOS never stops shuffling desktops
+        world.reconfigureDisplays()
+        world.clock.advance(by: 120)
+
+        #expect(world.moveAttempts == moves)  // nothing was moved on a half-finished read
+        #expect(world.desktop(of: 503) == 11)
+        let note = try #require(engine.status().softDrift.first { $0.handle == nil && $0.problem.contains("settle") })
+        #expect(note.hint.contains("Restore"))
+
+        // The next change settles, and Restores as usual.
+        world.unsettledReads = 0
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+        #expect(world.desktop(of: 503) == 22)
+        #expect(!engine.status().softDrift.contains { $0.problem.contains("settle") })
+    }
+
     @Test func whenAGuestDisplaySessionEndsWindowsMovedOntoItGoHome() throws {
         world.displays = [.builtIn(desktops: [.regular(11, current: true), .regular(12)])]
         world.windows = [

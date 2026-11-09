@@ -246,7 +246,7 @@ public final class Engine {
             },
             pins: pins.compactMap { handles[$0] },
             drift: report.drift,
-            softDrift: report.softDrift,
+            softDrift: report.softDrift + [unsettledDisplayChangeNote].compactMap { $0 },
             isPaused: isPaused
         )
     }
