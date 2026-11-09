@@ -37,13 +37,13 @@ extension Engine {
     }
 
     /// Runs `body` with the current Layout, refusing if the file is unusable.
-    private func withLayout(_ body: () -> CommandReply) -> CommandReply {
+    func withLayout(_ body: () -> CommandReply) -> CommandReply {
         reloadLayoutIfChanged()
         if let layoutProblem { return CommandReply(text: layoutProblem.description, isError: true) }
         return body()
     }
 
-    private func committing(_ success: String) -> CommandReply {
+    func committing(_ success: String) -> CommandReply {
         do {
             try writeLayout()
             return CommandReply(text: success)
@@ -70,7 +70,8 @@ extension Engine {
     func save() -> CommandReply {
         withLayout {
             let displays = Self.knownDisplays(windowSystem.readDisplays())
-            let windows = windowSystem.readWindows().filter(\.isStandard)
+            let standard = windowSystem.readWindows().filter(\.isStandard)
+            let windows = standard.filter { !isIgnored($0) }  // Ignored windows keep whatever Assignment they had
             let setupKey = displays.map(\.id).sorted()
             let previous = layout.displaySetups.first { $0.displays == setupKey }
 
@@ -135,7 +136,7 @@ extension Engine {
 
             // Every window on a Space gets an Assignment; Assignments of windows that are gone are dropped.
             var assignments: [WindowIdentity: String] = [:]
-            let live = Set(windows.map(Self.identity(of:)))
+            let live = Set(standard.map(Self.identity(of:)))
             for assignment in layout.assignments where live.contains(assignment.window) && layout.spaces.contains(assignment.space) {
                 assignments[assignment.window] = assignment.space
             }
@@ -155,6 +156,32 @@ extension Engine {
         }
     }
 
+    /// Saves one window's Assignment as the Space it's on now, leaving every other Assignment alone.
+    func save(handle: String) -> CommandReply {
+        withLayout {
+            let displays = windowSystem.readDisplays()
+            guard resolvedSpaces(displays) != nil else { return Self.unknownDisplaySetupReply }
+            guard let window = window(withHandle: handle, in: windowSystem.readWindows().filter(\.isStandard)) else {
+                return Self.unknownHandleReply(handle)
+            }
+            guard !window.isFullscreen else {
+                return CommandReply(text: "\(handle) is fullscreen; Space Maker doesn't save fullscreen windows yet.", isError: true)
+            }
+            guard let space = window.desktopID.flatMap({ spaceNamesByDesktop(displays)[$0] }) else {
+                return CommandReply(text: "\(handle) isn't on a Space. Save everything to make its desktop a Space.", isError: true)
+            }
+            assign(window, to: space)
+            return committing("Saved \(handle) (\(window.appName) “\(window.title)”) on \(space).")
+        }
+    }
+
+    func assign(_ window: WindowSystemWindow, to space: String) {
+        let identity = Self.identity(of: window)
+        layout.assignments.removeAll { $0.window == identity }
+        layout.assignments.append(Assignment(window: identity, space: space))
+        layout.assignments.sort { ($0.window.bundleID, $0.window.title) < ($1.window.bundleID, $1.window.title) }
+    }
+
     // MARK: - Restore
 
     /// Restores every window with an Assignment, or just the window with `handle`.
@@ -165,8 +192,10 @@ extension Engine {
             guard let desktops = resolvedSpaces(displays) else { return Self.unknownDisplaySetupReply }
             let windows = windowSystem.readWindows().filter(\.isStandard)
             let spaceOf = Dictionary(layout.assignments.map { ($0.window, $0.space) }, uniquingKeysWith: { first, _ in first })
+            forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
+            defer { rememberWorldForSoftDrift() }
 
-            var targets = windows.filter { !$0.isFullscreen }
+            var targets = windows.filter { !$0.isFullscreen && !isIgnored($0) }
             if let handle {
                 guard let window = window(withHandle: handle, in: windows) else { return Self.unknownHandleReply(handle) }
                 guard spaceOf[Self.identity(of: window)] != nil else {
@@ -177,6 +206,7 @@ extension Engine {
 
             var moved: [String] = []
             var problems: [String] = []
+            var notRetried: [String] = []
             for window in targets {
                 guard let space = spaceOf[Self.identity(of: window)] else { continue }  // no Assignment: never moved
                 let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
@@ -185,16 +215,26 @@ extension Engine {
                     continue
                 }
                 if window.desktopID == target { continue }
+                // Soft Drift: a move that already failed isn't retried until the world changes, unless asked for by handle.
+                if handle == nil, failedMoves.contains(window.id) {
+                    notRetried.append(label)
+                    continue
+                }
                 if windowSystem.moveWindow(window.id, toDesktop: target) {
                     moved.append("\(label) → \(space)")
+                    failedMoves.remove(window.id)
                 } else {
                     problems.append("\(label): macOS didn't move it to \(space).")
+                    failedMoves.insert(window.id)
                 }
             }
 
             var lines = [moved.isEmpty ? "Everything was already on its Space." : "Moved \(moved.count) window\(moved.count == 1 ? "" : "s"):"]
             lines += moved.map { "- \($0)" }
             if !problems.isEmpty { lines += ["Couldn't restore:"] + problems.map { "- \($0)" } }
+            if !notRetried.isEmpty {
+                lines += ["Not retried until windows or desktops change (Soft Drift):"] + notRetried.map { "- \($0)" }
+            }
             return CommandReply(text: lines.joined(separator: "\n"), isError: handle != nil && !problems.isEmpty)
         }
     }
@@ -224,10 +264,7 @@ extension Engine {
             }
             guard save else { return CommandReply(text: "Moved \(handle) to \(space).") }
 
-            let identity = Self.identity(of: window)
-            layout.assignments.removeAll { $0.window == identity }
-            layout.assignments.append(Assignment(window: identity, space: space))
-            layout.assignments.sort { ($0.window.bundleID, $0.window.title) < ($1.window.bundleID, $1.window.title) }
+            assign(window, to: space)
             return committing("Moved \(handle) to \(space) and saved its Assignment.")
         }
     }
@@ -281,7 +318,7 @@ extension Engine {
         Dictionary((resolvedSpaces(displays) ?? [:]).map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private func window(withHandle handle: String, in windows: [WindowSystemWindow]) -> WindowSystemWindow? {
+    func window(withHandle handle: String, in windows: [WindowSystemWindow]) -> WindowSystemWindow? {
         windows.first { handles[$0.id] == handle }
     }
 
@@ -289,7 +326,7 @@ extension Engine {
         text: "Nothing is saved for this Display Setup yet. Save first.", isError: true
     )
 
-    private static func unknownHandleReply(_ handle: String) -> CommandReply {
+    static func unknownHandleReply(_ handle: String) -> CommandReply {
         CommandReply(text: "No window has the handle “\(handle)”. Handles come from status.", isError: true)
     }
 

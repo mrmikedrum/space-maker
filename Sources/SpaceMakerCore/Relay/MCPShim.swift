@@ -29,8 +29,10 @@ public struct MCPShim: Sendable {
     public static let notRunning = "Space Maker isn't running."
 
     public static let tools = [
-        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, and which Space each desktop holds. Displays other than the built-in one are Guest Displays for now."),
-        Tool(name: "save", description: "Save: record which Space every window is on, and the order of Spaces on each display, into the Layout. A desktop Space Maker hasn't seen before becomes a new Space named after its main app."),
+        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title and current desktop, and which Space each desktop holds. Displays other than the built-in one are Guest Displays for now. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
+        Tool(name: "save", description: "Save: record which Space every window is on, and the order of Spaces on each display, into the Layout. A desktop Space Maker hasn't seen before becomes a new Space named after its main app. Give a window handle to save just that window's Assignment as the Space it's on now.", parameters: [
+            Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\". Omit to save everything.", isRequired: false),
+        ]),
         Tool(name: "restore", description: "Restore: move every window that has an Assignment back to its Space. Give a window handle to restore just that window. Windows without an Assignment are never moved.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\". Omit to restore every window.", isRequired: false),
         ]),
@@ -38,6 +40,10 @@ public struct MCPShim: Sendable {
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
             Parameter(name: "space", kind: .string, description: "The name of the Space to move it to, as status shows it.", isRequired: true),
             Parameter(name: "save", kind: .boolean, description: "Also save this as the window's Assignment, so Restore keeps it there.", isRequired: false),
+        ]),
+        Tool(name: "ignore", description: "Ignore a window so it never counts as Drift and Save and Restore leave it alone, until it closes. With app, always Ignore its app; that is saved in the Layout.", parameters: [
+            Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
+            Parameter(name: "app", kind: .boolean, description: "Always Ignore this window's app, not just this window.", isRequired: false),
         ]),
         Tool(name: "rename_space", description: "Rename a Space. Its windows stay assigned to it.", parameters: [
             Parameter(name: "space", kind: .string, description: "The Space's current name.", isRequired: true),

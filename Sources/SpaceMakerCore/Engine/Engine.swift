@@ -18,6 +18,14 @@ public final class Engine {
     /// Why the Layout file can't be used right now, if it can't.
     var layoutProblem: LayoutFileError?
 
+    /// Windows the user Ignored until they close, by window ID. Never persisted.
+    var ignoredWindows: Set<UInt32> = []
+
+    /// Windows Restore couldn't move: Soft Drift until `softDriftWorld` changes.
+    var failedMoves: Set<UInt32> = []
+    /// The world as it was when Soft Drift was last recorded.
+    var softDriftWorld: WorldSnapshot?
+
     /// Why moving windows is disabled, if the Doctor says it doesn't work.
     var movesDisabledReason: String?
 
@@ -41,12 +49,15 @@ public final class Engine {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             return CommandReply(text: String(decoding: try! encoder.encode(status()), as: UTF8.self))
         case "save":
+            if let handle = request.arguments["window"] { return save(handle: handle) }
             return save()
         case "restore":
             return restore(handle: request.arguments["window"])
         case "move_window":
             return moveWindow(handle: request.arguments["window"], space: request.arguments["space"],
                               save: request.arguments["save"] == "true")
+        case "ignore":
+            return ignore(handle: request.arguments["window"], app: request.arguments["app"] == "true")
         case "rename_space":
             return renameSpace(request.arguments["space"], to: request.arguments["name"])
         case "doctor":
@@ -70,6 +81,8 @@ public final class Engine {
 
         let windows = windowSystem.readWindows().filter(\.isStandard)
         handles = handles.filter { id, _ in windows.contains { $0.id == id } }
+        ignoredWindows = ignoredWindows.filter { id in windows.contains { $0.id == id } }
+        let report = drift(displays: displays, windows: windows)
         return Status(
             displaySetup: Self.knownDisplays(displays).map { Self.displayStatus($0, spaces: spaces) },
             guestDisplays: Self.guestDisplays(displays).map { Self.displayStatus($0, spaces: [:]) },
@@ -83,7 +96,9 @@ public final class Engine {
                     title: window.title,
                     desktop: window.desktopID.flatMap { desktops[$0] }
                 )
-            }
+            },
+            drift: report.drift,
+            softDrift: report.softDrift
         )
     }
 
