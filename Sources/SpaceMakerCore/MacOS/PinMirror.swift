@@ -14,6 +14,8 @@ final class PinMirror {
     private let output: MirrorOutput
     private var stream: SCStream?
     private var isShown = false
+    /// Bumped by every start and stop of capture, so a start that finishes after a later hide or show is dropped.
+    private var captureGeneration = 0
 
     /// The source window's stream stopped with an error, which is how a closed window shows up.
     var onCaptureStopped: (() -> Void)?
@@ -60,6 +62,8 @@ final class PinMirror {
         let output = output
         let pixelSize = panel.frame.size
         let scale = panel.backingScaleFactor
+        captureGeneration += 1
+        let generation = captureGeneration
         Task { [weak self] in
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -78,10 +82,12 @@ final class PinMirror {
                 let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration, delegate: output)
                 try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: output.queue)
                 try await stream.startCapture()
-                guard let self, self.isShown else {
+                // Rapid hide and show can start several captures; only the latest one, still wanted, is kept.
+                guard let self, self.isShown, self.captureGeneration == generation else {
                     try? await stream.stopCapture()
                     return
                 }
+                if let superseded = self.stream { Task { try? await superseded.stopCapture() } }
                 self.stream = stream
             } catch {
                 FileHandle.standardError.write(Data("Space Maker: couldn't start the Pin mirror for window \(windowID): \(error)\n".utf8))
@@ -90,6 +96,7 @@ final class PinMirror {
     }
 
     private func stopCapture() {
+        captureGeneration += 1  // a capture still starting is stopped as soon as it has
         guard let stream else { return }
         self.stream = nil
         Task { try? await stream.stopCapture() }
