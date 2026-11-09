@@ -61,6 +61,23 @@ struct ChromeIdentityTests {
         #expect(world.desktop(of: 1603) == 11)
     }
 
+    @Test func savingOneChromeWindowThatLooksLikeAnotherNamesItToo() throws {
+        desktops()
+        world.windows = [.chrome(601, profile: .known("Work"), title: "Inbox", desktop: 12)]
+        let engine = engine()
+        try engine.run("save")
+        world.openWindow(.chrome(602, profile: .known("Work"), title: "Calendar", desktop: 13))
+        let handle = try #require(engine.status().windows.first { $0.title == "Calendar" }?.handle)
+
+        let reply = try engine.run("save", ["window": handle])
+
+        let name = try #require(world.window(602)?.name)
+        #expect(reply.contains("“\(name)”"))
+        #expect(world.window(601)?.name == nil)  // every other window and Assignment is left alone
+        let layout = try JSONDecoder().decode(Layout.self, from: Data(contentsOf: layoutURL))
+        #expect(layout.assignments.map { "\($0.window.name ?? "-") → \($0.space)" }.sorted() == ["- → Google Chrome", "\(name) → Desktop 2"])
+    }
+
     @Test func saveDropsClosedUnnamedWindowsButKeepsClosedNamedOnesUntilTheyReturn() throws {
         desktops()
         world.windows = [

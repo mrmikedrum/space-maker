@@ -192,19 +192,10 @@ extension Engine {
             var resaved = Set<Int>()
             for window in windows {
                 guard let space = placeOf(window) else { continue }
-                var identity = Self.identity(of: window)
-                var frames: [SavedFrame] = []
-                if let old = matches[window.id] {
-                    resaved.insert(old)
-                    // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
-                    if identity.isChrome, identity.chromeProfile == nil {
-                        identity.chromeProfile = layout.assignments[old].window.chromeProfile
-                    }
-                    frames = layout.assignments[old].frames  // other Display Setups' positions are kept
-                }
-                var assignment = Assignment(window: identity, space: space, frames: frames)
-                // A fullscreen window fills its display, so it has no position to save.
-                if !window.isFullscreen, let frame = Self.relativeFrame(of: window, in: displays) { assignment.setFrame(frame, in: setupKey) }
+                if let old = matches[window.id] { resaved.insert(old) }
+                let assignment = Self.assignment(
+                    for: window, on: space, replacing: matches[window.id].map { layout.assignments[$0] }, savingFrameIn: displays
+                )
                 assignments.append(assignment)
                 saved += 1
             }
@@ -236,27 +227,46 @@ extension Engine {
             guard let space = window.desktopID.flatMap({ spaceNamesByDesktop(displays)[$0] }) else {
                 return CommandReply(text: "\(handle) isn't on a Space. Save everything to make its desktop a Space.", isError: true)
             }
-            assign(window, to: space, frame: Self.relativeFrame(of: window, in: knownDisplays(displays)), in: displaySetupKey(displays))
-            return committing("Saved \(handle) (\(window.appName) “\(window.title)”) on \(space).")
+            let notes = saveAssignment(of: window, on: space, displays: displays, savingFrame: true)
+            return committing((["Saved \(handle) (\(window.appName) “\(window.title)”) on \(space)."] + notes).joined(separator: "\n"))
         }
     }
 
-    /// Replaces the window's Assignment, if it has one, with one for `space`, keeping its saved positions.
-    /// `frame`, if given, becomes its position in the Display Setup `displaySetup`.
-    func assign(_ window: WindowSystemWindow, to space: String, frame: RelativeFrame? = nil, in displaySetup: [String] = []) {
-        var identity = Self.identity(of: window)
-        var frames: [SavedFrame] = []
-        let windows = windowSystem.readWindows().filter(\.isStandard)
-        if let old = Self.match(windows, to: layout.assignments)[window.id] {
-            // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
-            if identity.isChrome, identity.chromeProfile == nil { identity.chromeProfile = layout.assignments[old].window.chromeProfile }
-            frames = layout.assignments[old].frames
-            layout.assignments.remove(at: old)
+    /// One window's new Assignment on `place` (a Space, or a fullscreen window's place), replacing `old` if it had one.
+    /// Save all, Save one and `move_window` build Assignments only here, so they can't diverge.
+    /// With `displays` (the known displays), the window's current position is saved for their Display Setup.
+    static func assignment(
+        for window: WindowSystemWindow, on place: String, replacing old: Assignment?, savingFrameIn displays: [WindowSystemDisplay]?
+    ) -> Assignment {
+        var identity = identity(of: window)
+        // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
+        if let old, identity.isChrome, identity.chromeProfile == nil { identity.chromeProfile = old.window.chromeProfile }
+        var assignment = Assignment(window: identity, space: place, frames: old?.frames ?? [])  // other Display Setups' positions are kept
+        // A fullscreen window fills its display, so it has no position to save.
+        if !window.isFullscreen, let displays, let frame = relativeFrame(of: window, in: displays) {
+            assignment.setFrame(frame, in: displays.map(\.id).sorted())
         }
-        var assignment = Assignment(window: identity, space: space, frames: frames)
-        if let frame { assignment.setFrame(frame, in: displaySetup) }
+        return assignment
+    }
+
+    /// Saves one window's Assignment as `space`, leaving every other Assignment alone. Like Save all, it first names
+    /// the window if it's a Chrome window that looks like another one on a Space. Returns what naming did, for the reply.
+    func saveAssignment(of window: WindowSystemWindow, on space: String, displays: [WindowSystemDisplay], savingFrame: Bool) -> [String] {
+        let standard = windowSystem.readWindows().filter(\.isStandard)
+        let old = Self.match(standard, to: layout.assignments)[window.id]
+        let spaces = spaceNamesByDesktop(displays)
+        var onSpaces = standard.filter { other in
+            other.id == window.id || (!isIgnored(other) && !other.isFullscreen && other.desktopID.flatMap { spaces[$0] } != nil)
+        }
+        let notes = autoNameAmbiguousChromeWindows(&onSpaces, saving: [window.id], among: Set(onSpaces.map(\.id)))
+        let named = onSpaces.first { $0.id == window.id } ?? window
+        let assignment = Self.assignment(
+            for: named, on: space, replacing: old.map { layout.assignments[$0] }, savingFrameIn: savingFrame ? knownDisplays(displays) : nil
+        )
+        if let old { layout.assignments.remove(at: old) }
         layout.assignments.append(assignment)
         layout.assignments.sort { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
+        return notes
     }
 
     // MARK: - Restore
@@ -371,8 +381,8 @@ extension Engine {
             }
             guard save else { return CommandReply(text: "Moved \(handle) to \(space).") }
 
-            assign(window, to: space)
-            return committing("Moved \(handle) to \(space) and saved its Assignment.")
+            let notes = saveAssignment(of: window, on: space, displays: displays, savingFrame: false)
+            return committing((["Moved \(handle) to \(space) and saved its Assignment."] + notes).joined(separator: "\n"))
         }
     }
 

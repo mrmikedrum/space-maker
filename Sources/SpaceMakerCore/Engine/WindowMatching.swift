@@ -89,15 +89,17 @@ extension Engine {
         return matched
     }
 
-    /// Names the Chrome windows Save is about to assign that their profile and fullscreen flag can't tell apart,
-    /// including any whose profile is unknown, so that they keep their identity across a relaunch. Updates `windows` and returns what happened, for Save's reply.
-    func autoNameAmbiguousChromeWindows(_ windows: inout [WindowSystemWindow], saving: Set<UInt32>) -> [String] {
+    /// Names the Chrome windows Save is about to assign (`saving`) that their profile and fullscreen flag can't tell apart
+    /// from another unnamed window `among` those being considered (by default, the ones being saved), including any whose
+    /// profile is unknown, so that they keep their identity across a relaunch. Updates `windows` and returns what happened, for Save's reply.
+    func autoNameAmbiguousChromeWindows(_ windows: inout [WindowSystemWindow], saving: Set<UInt32>, among: Set<UInt32>? = nil) -> [String] {
         struct Kind: Hashable {
             var profile: String?
             var isFullscreen: Bool
         }
         var kinds: [Kind: [Int]] = [:]
-        for (index, window) in windows.enumerated() where saving.contains(window.id) && window.name == nil {
+        let among = among ?? saving
+        for (index, window) in windows.enumerated() where among.contains(window.id) && window.name == nil {
             switch window.chromeProfile {
             case .notChrome: continue
             case .known(let profile): kinds[Kind(profile: profile, isFullscreen: window.isFullscreen), default: []].append(index)
@@ -110,7 +112,7 @@ extension Engine {
         // A window whose profile can't be read (it's on a hidden desktop) can only be told apart by a name.
         let ambiguous = kinds.filter { $0.key.profile == nil || $0.value.count > 1 }.sorted { ($0.key.profile ?? "", $0.key.isFullscreen ? 1 : 0) < ($1.key.profile ?? "", $1.key.isFullscreen ? 1 : 0) }
         naming: for (kind, indices) in ambiguous {
-            for index in indices.sorted(by: { windows[$0].id < windows[$1].id }) {
+            for index in indices.sorted(by: { windows[$0].id < windows[$1].id }) where saving.contains(windows[index].id) {
                 let base = kind.profile ?? "Chrome"
                 let name = (1...).lazy.map { "\(base) \($0)" }.first { !taken.contains($0) }!
                 switch windowSystem.setChromeWindowName(windows[index].id, to: name) {
