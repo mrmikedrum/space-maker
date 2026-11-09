@@ -3,9 +3,12 @@ import Foundation
 /// One command sent to the app over the local socket, as one line of JSON (ADR 0002).
 public struct CommandRequest: Codable, Equatable, Sendable {
     public var command: String
+    /// The window a command acts on, by its handle from `status`.
+    public var window: String?
 
-    public init(command: String) {
+    public init(command: String, window: String? = nil) {
         self.command = command
+        self.window = window
     }
 }
 

@@ -11,6 +11,7 @@ public final class MacWindowSystem: WindowSystem {
     public static let chromeBundleID = "com.google.Chrome"
 
     private let skyLight: SkyLight
+    public var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
 
     public init(skyLight: SkyLight) {
         self.skyLight = skyLight
@@ -189,4 +190,14 @@ enum AX {
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
         return value as? T
     }
+}
+
+// MARK: - Pin mirrors
+
+extension MacWindowSystem {
+    public func readFrontmostWindow() -> UInt32? { nil }
+    public func focusWindow(_ windowID: UInt32) {}
+    public func showPinMirror(of windowID: UInt32) {}
+    public func hidePinMirror(of windowID: UInt32) {}
+    public func stopPinMirror(of windowID: UInt32) {}
 }

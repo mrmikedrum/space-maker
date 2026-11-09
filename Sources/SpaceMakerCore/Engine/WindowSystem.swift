@@ -1,12 +1,39 @@
 /// The single seam between the engine and macOS. `MacWindowSystem` is the real adapter; tests use a fake.
 ///
-/// Reads only, for now. Actions, events and the clock join the port as later features need them.
+/// Actions, events and the clock join the port as features need them.
 @MainActor
 public protocol WindowSystem: AnyObject {
     /// Every connected display, with its desktops in Mission Control order.
     func readDisplays() -> [WindowSystemDisplay]
     /// Every window on any desktop.
     func readWindows() -> [WindowSystemWindow]
+    /// The focused window of the frontmost app, if it has one.
+    func readFrontmostWindow() -> UInt32?
+
+    /// Where the port delivers events. The engine sets this when it's created.
+    var onEvent: (@MainActor (WindowSystemEvent) -> Void)? { get set }
+
+    /// Raises and focuses the window. Like macOS itself, this switches to the window's desktop first.
+    func focusWindow(_ windowID: UInt32)
+
+    // MARK: Pin mirrors
+
+    /// Shows the window's Pin mirror on every regular Space, starting it if needed.
+    func showPinMirror(of windowID: UInt32)
+    /// Hides the window's Pin mirror, keeping it ready to show again.
+    func hidePinMirror(of windowID: UInt32)
+    /// Removes the window's Pin mirror for good.
+    func stopPinMirror(of windowID: UInt32)
+}
+
+/// Something that happened in macOS that the engine reacts to.
+public enum WindowSystemEvent: Equatable, Sendable {
+    /// The desktop showing on some display changed. macOS doesn't say which.
+    case activeSpaceChanged
+    /// The user clicked the Pin mirror of this window (a click, not a drag).
+    case pinClicked(UInt32)
+    /// The window closed.
+    case windowClosed(UInt32)
 }
 
 public struct WindowSystemDisplay: Equatable, Sendable {

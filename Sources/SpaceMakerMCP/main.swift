@@ -12,13 +12,20 @@ let server = Server(
 )
 
 await server.withMethodHandler(ListTools.self) { _ in
-    .init(tools: MCPShim.tools.map {
-        Tool(name: $0.name, description: $0.description, inputSchema: .object(["type": "object", "properties": .object([:])]))
+    .init(tools: MCPShim.tools.map { tool in
+        let schema: Value = tool.takesWindow
+            ? .object([
+                "type": "object",
+                "properties": .object(["window": .object(["type": "string", "description": "The window's handle from status, such as \"w3\"."])]),
+                "required": .array(["window"]),
+            ])
+            : .object(["type": "object", "properties": .object([:])])
+        return Tool(name: tool.name, description: tool.description, inputSchema: schema)
     })
 }
 
 await server.withMethodHandler(CallTool.self) { params in
-    let result = await shim.callTool(named: params.name)
+    let result = await shim.callTool(named: params.name, window: params.arguments?["window"]?.stringValue)
     return .init(content: [.text(result.text)], isError: result.isError)
 }
 

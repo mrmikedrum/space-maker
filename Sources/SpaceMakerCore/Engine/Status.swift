@@ -5,6 +5,8 @@ public struct Status: Codable, Equatable, Sendable {
     /// Connected displays that belong to no Display Setup.
     public var guestDisplays: [DisplayStatus]
     public var windows: [WindowStatus]
+    /// Handles of the pinned windows, in the order they were pinned.
+    public var pins: [String]
 }
 
 public struct DisplayStatus: Codable, Equatable, Sendable {
