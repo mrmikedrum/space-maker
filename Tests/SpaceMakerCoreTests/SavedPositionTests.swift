@@ -165,4 +165,26 @@ struct SavedPositionTests {
         #expect(slack.frame(in: ["built-in"]) == RelativeFrame(x: 0, y: 0, width: 0.5, height: 1))
         #expect(slack.frame(in: ["built-in", "dell-uuid"]) == RelativeFrame(x: 0, y: 0, width: 0.5, height: 1))
     }
+
+    @Test func placementPutsAnAppearingWindowAtItsSavedPositionOnItsSpace() throws {
+        let engine = try savedLaptop()
+        world.closeWindow(502)
+
+        // Slack reopens on the current desktop at the size it likes.
+        world.openWindow(.app(503, "com.tinyspeck.slackmacgap", "Slack", title: "general", desktop: 11, frame: WindowFrame(x: 200, y: 200, width: 900, height: 700)))
+
+        #expect(world.desktop(of: 503) == 12)
+        #expect(world.window(503)?.frame == WindowFrame(x: 0, y: 25, width: 756, height: 957))
+        #expect(engine.status().drift.isEmpty)
+    }
+
+    @Test func placementPutsAnAppearingWindowAlreadyOnItsSpaceAtItsSavedPosition() throws {
+        let engine = try savedLaptop()
+        world.closeWindow(501)
+
+        world.openWindow(.app(503, "com.apple.Terminal", "Terminal", title: "zsh", desktop: 11, frame: WindowFrame(x: 200, y: 200, width: 900, height: 700)))
+
+        #expect(world.window(503)?.frame == WindowFrame(x: 100, y: 125, width: 600, height: 400))
+        #expect(engine.status().drift.isEmpty)
+    }
 }

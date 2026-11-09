@@ -236,40 +236,30 @@ extension Engine {
             var problems: [String] = []
             var notRetried: [String] = []
             for window in targets {
-                guard let space = spaceOf(window) else { continue }  // no Assignment: never moved
+                guard let index = matches[window.id] else { continue }  // no Assignment: never moved
+                let space = layout.assignments[index].space
                 let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
                 guard let target = desktops[space] else {
                     problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")
                     continue
                 }
-                let frame = matches[window.id].flatMap { savedFrame(of: layout.assignments[$0], on: target, displays: known) }
-                let needsMove = window.desktopID != target
-                // Only a window moved to another display might have moved on screen; otherwise its read frame is current.
-                let needsFrame = frame.map { (needsMove && Self.visibleFrame(ofDisplayWith: window.desktopID, in: known) !=
-                    Self.visibleFrame(ofDisplayWith: target, in: known)) || !Self.isAt(window.frame, $0) } ?? false
-                if !needsMove && !needsFrame { continue }
+                let plan = plan(window, layout.assignments[index], on: target, displays: known)
+                if !plan.isNeeded { continue }
                 // Soft Drift: a move that already failed isn't retried until the world changes, unless asked for by handle.
                 if handle == nil, failedMoves.contains(window.id) || failedFrames.contains(window.id) {
                     notRetried.append(label)
                     continue
                 }
-                if needsMove {
-                    guard windowSystem.moveWindow(window.id, toDesktop: target) else {
-                        problems.append("\(label): macOS didn't move it to \(space).")
-                        failedMoves.insert(window.id)
-                        continue
-                    }
-                    failedMoves.remove(window.id)
+                switch carryOut(plan, for: window.id) {
+                case .moveFailed:
+                    problems.append("\(label): macOS didn't move it to \(space).")
+                    continue
+                case .frameFailed:
+                    problems.append("\(label): macOS didn't put it back at its saved position.")
+                    continue
+                case .done: break
                 }
-                if needsFrame, let frame {
-                    guard windowSystem.setFrame(window.id, to: frame) else {
-                        problems.append("\(label): macOS didn't put it back at its saved position.")
-                        failedFrames.insert(window.id)
-                        continue
-                    }
-                    failedFrames.remove(window.id)
-                }
-                moved.append(needsMove ? "\(label) → \(space)" : "\(label) → its saved position")
+                moved.append(plan.needsMove ? "\(label) → \(space)" : "\(label) → its saved position")
             }
 
             var lines = [moved.isEmpty ? "Everything was already on its Space." : "Moved \(moved.count) window\(moved.count == 1 ? "" : "s"):"]

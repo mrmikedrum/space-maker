@@ -12,8 +12,8 @@ extension Engine {
         return CommandReply(text: "Resumed: windows that appear go to their Space again.")
     }
 
-    /// Moves a window that just appeared to the Space its Assignment names.
-    /// A window with no Assignment, an Ignored window, or one already on its Space is left alone.
+    /// Moves a window that just appeared to the Space its Assignment names, and to its saved position there.
+    /// A window with no Assignment, an Ignored window, or one already in place is left alone.
     /// Each window gets one chance in its life, even if macOS reports it again, so a window the user
     /// moves after it was placed (or that appeared while paused) is never moved back automatically.
     func place(_ windowID: UInt32) {
@@ -28,14 +28,12 @@ extension Engine {
         let displays = windowSystem.readDisplays()
         guard let desktops = resolvedSpaces(displays), !window.isFullscreen, !isIgnored(window),
               let index = Self.match(windows, to: layout.assignments)[windowID],
-              let target = desktops[layout.assignments[index].space], window.desktopID != target
+              let target = desktops[layout.assignments[index].space]
         else { return }
+        let plan = plan(window, layout.assignments[index], on: target, displays: knownDisplays(displays))
+        guard plan.isNeeded else { return }
         forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
-        if windowSystem.moveWindow(windowID, toDesktop: target) {
-            failedMoves.remove(windowID)
-        } else {
-            failedMoves.insert(windowID)  // Soft Drift, like a failed Restore
-        }
+        _ = carryOut(plan, for: windowID)  // a failure is Soft Drift, like a failed Restore
         rememberWorldForSoftDrift()
     }
 }

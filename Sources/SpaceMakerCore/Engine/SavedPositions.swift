@@ -32,4 +32,49 @@ extension Engine {
         return [frame.x - target.x, frame.y - target.y, frame.width - target.width, frame.height - target.height]
             .allSatisfy { abs($0) <= positionTolerance }
     }
+
+    /// What it takes to put a window where its Assignment says in this Display Setup.
+    struct WindowPlan {
+        var target: UInt64
+        var needsMove: Bool
+        /// The saved position to apply, if the window needs putting there.
+        var frame: WindowFrame?
+
+        var isNeeded: Bool { needsMove || frame != nil }
+    }
+
+    enum PlanOutcome {
+        case done
+        case moveFailed
+        case frameFailed
+    }
+
+    /// `displays` are the known displays.
+    func plan(_ window: WindowSystemWindow, _ assignment: Assignment, on target: UInt64, displays: [WindowSystemDisplay]) -> WindowPlan {
+        let needsMove = window.desktopID != target
+        var frame = savedFrame(of: assignment, on: target, displays: displays)
+        // A window that stays on its display keeps its frame through a move, so the frame read now is still current.
+        let changesDisplay = needsMove && Self.visibleFrame(ofDisplayWith: window.desktopID, in: displays) != Self.visibleFrame(ofDisplayWith: target, in: displays)
+        if let saved = frame, !changesDisplay, Self.isAt(window.frame, saved) { frame = nil }
+        return WindowPlan(target: target, needsMove: needsMove, frame: frame)
+    }
+
+    /// Moves the window to its Space, then puts it at its saved position. Failures become Soft Drift.
+    func carryOut(_ plan: WindowPlan, for windowID: UInt32) -> PlanOutcome {
+        if plan.needsMove {
+            guard windowSystem.moveWindow(windowID, toDesktop: plan.target) else {
+                failedMoves.insert(windowID)
+                return .moveFailed
+            }
+            failedMoves.remove(windowID)
+        }
+        if let frame = plan.frame {
+            guard windowSystem.setFrame(windowID, to: frame) else {
+                failedFrames.insert(windowID)
+                return .frameFailed
+            }
+            failedFrames.remove(windowID)
+        }
+        return .done
+    }
 }
