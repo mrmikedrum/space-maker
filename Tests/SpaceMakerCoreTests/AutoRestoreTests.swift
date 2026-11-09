@@ -30,6 +30,8 @@ struct AutoRestoreTests {
         world.move(504, to: 22)
         try engine.run("remember_display", ["display": "dell-uuid"])
         try engine.run("save")
+        world.reconfigureDisplays()  // the docking's last event: the world is settled and Space Maker knows it
+        world.clock.advance(by: 30)
     }
 
     @Test func undockingRestoresTheLaptopSlotsWithNoFurtherAction() throws {
@@ -136,6 +138,49 @@ struct AutoRestoreTests {
 
         #expect(world.window(503)?.frame == before)  // back where it was on the same display
         #expect(world.window(506)?.frame == textEditShoved)  // no Assignment: never moved
+    }
+
+    @Test func aWindowShovedBeforeTheEventGoesBackEvenIfSpaceMakerLooksAtTheWorldBeforeTheEventArrives() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)  // no positions were saved: the windows had none
+        let before = WindowFrame(x: 1700, y: 100, width: 800, height: 600)
+        world.place(503, at: before)
+        _ = engine.status()
+
+        // An AirPlay screen connects and macOS shoves Safari. The menu bar's status refresh runs before the event.
+        world.displays.append(.external("airplay-uuid", name: "Living Room TV", desktops: [.regular(31, current: true)]))
+        world.place(503, at: WindowFrame(x: 1512, y: 25, width: 800, height: 600))
+        _ = engine.status()
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+
+        #expect(world.window(503)?.frame == before)
+    }
+
+    @Test func afterAChangeThatNeverSettledRestoreAllMakesTheUsersLaterMovesTheOnesAChangePutsBack() throws {
+        let engine = engine()
+        try savedLaptopThenDocked(engine)  // no positions were saved: the windows had none
+        world.place(503, at: WindowFrame(x: 1700, y: 100, width: 800, height: 600))
+        _ = engine.status()
+
+        // A display change whose desktops never settle, then the user's Restore all once they have.
+        world.displays.append(.external("airplay-uuid", name: "Living Room TV", desktops: [.regular(31, current: true)]))
+        world.unsettledReads = 1000
+        world.reconfigureDisplays()
+        world.clock.advance(by: 120)
+        world.unsettledReads = 0
+        try engine.run("restore")
+
+        // The user moves Safari, then the TV disconnects and macOS shoves Safari before saying so.
+        let moved = WindowFrame(x: 2000, y: 300, width: 800, height: 600)
+        world.place(503, at: moved)
+        _ = engine.status()
+        world.disconnect("airplay-uuid")
+        world.place(503, at: WindowFrame(x: 1512, y: 25, width: 800, height: 600))
+        world.reconfigureDisplays()
+        world.clock.advance(by: 30)
+
+        #expect(world.window(503)?.frame == moved)
     }
 
     @Test func windowsWithoutAnAssignmentAreNeverPutBackAfterADisplayChange() throws {
