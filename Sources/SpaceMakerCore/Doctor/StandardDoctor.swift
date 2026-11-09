@@ -8,14 +8,21 @@ public enum StandardDoctor {
     static let symbolsTitle = "Private SkyLight symbols"
     static let liveMoveTitle = "Live move test"
 
-    public static func make(skyLight: SkyLight, helperExecutable: URL, logsDirectory: URL) -> Doctor {
-        Doctor(
+    public static func make(
+        skyLight: SkyLight,
+        windowSystem: MacWindowSystem? = nil,
+        helperExecutable: URL,
+        logsDirectory: URL
+    ) -> Doctor {
+        let windowSystem = windowSystem ?? MacWindowSystem(skyLight: skyLight)
+        return Doctor(
             logsDirectory: logsDirectory,
             environment: environment(),
             checks: [
                 DoctorCheck(title: "Permissions") { permissions() },
                 DoctorCheck(title: symbolsTitle) { symbols(skyLight) },
                 DoctorCheck(title: "Display and desktop enumeration") { enumeration(skyLight) },
+                DoctorCheck(title: "Chrome profiles") { chromeProfiles(windowSystem) },
                 DoctorCheck(title: liveMoveTitle) { LiveMoveTest(skyLight: skyLight, helperExecutable: helperExecutable).run() },
             ],
             verdict: verdict
@@ -110,6 +117,30 @@ public enum StandardDoctor {
             summary: "\(displays.count) display(s), \(regular) regular desktop(s).",
             details: details
         )
+    }
+
+    static func chromeProfiles(_ windowSystem: MacWindowSystem) -> CheckOutcome {
+        let chrome = windowSystem.readWindows().filter { $0.bundleID == MacWindowSystem.chromeBundleID && $0.isStandard }
+        guard !chrome.isEmpty else {
+            return CheckOutcome(.skipped(reason: "Chrome has no windows open."), summary: "No Chrome windows to read.")
+        }
+        var details = chrome.map { window in
+            let profile = switch window.chromeProfile {
+            case .known(let name): name
+            case .unknown, .notChrome: "UNKNOWN"
+            }
+            return "Window \(window.id) \"\(window.title)\": profile \(profile)"
+        }
+        let unknown = chrome.filter { $0.chromeProfile == .unknown }.count
+        guard unknown == 0 else {
+            details += MacWindowSystem.chromeProfileLimitations.map { "Possible reason: \($0)" }
+            return CheckOutcome(
+                .fail(suspectedCause: "Space Maker reads a Chrome window's profile from its toolbar avatar button through Accessibility, matching it against the profile names in Chrome's `Local State`. Either Accessibility can't reach the window (not granted, or the window is on a desktop that isn't visible) or Chrome changed the avatar button's accessible text. Status reports these windows' profile as unknown."),
+                summary: "\(unknown) of \(chrome.count) Chrome window(s) have an unknown profile.",
+                details: details
+            )
+        }
+        return CheckOutcome(.pass, summary: "Read the profile of all \(chrome.count) Chrome window(s).", details: details)
     }
 
     // MARK: - Helpers

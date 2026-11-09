@@ -1,0 +1,192 @@
+import AppKit
+import ApplicationServices
+import CoreGraphics
+import Foundation
+
+/// The real `WindowSystem`: reads this Mac's displays, desktops and windows.
+///
+/// Not unit tested; the Doctor is its test suite (spec, Testing Decisions).
+@MainActor
+public final class MacWindowSystem: WindowSystem {
+    public static let chromeBundleID = "com.google.Chrome"
+
+    private let skyLight: SkyLight
+
+    public init(skyLight: SkyLight) {
+        self.skyLight = skyLight
+    }
+
+    // MARK: - Displays
+
+    public func readDisplays() -> [WindowSystemDisplay] {
+        let screens = Dictionary(
+            NSScreen.screens.compactMap { screen in
+                (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { ($0.uint32Value, screen) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return (skyLight.displayDesktops() ?? []).map { display in
+            let displayID = Self.displayID(forSkyLightIdentifier: display.displayIdentifier)
+            let desktops = display.desktops.compactMap { desktop -> WindowSystemDesktop? in
+                let kind: DesktopKind
+                switch desktop.kind {
+                case .regular: kind = .regular
+                case .fullscreen: kind = .fullscreen
+                case .other: return nil
+                }
+                return WindowSystemDesktop(id: desktop.id, kind: kind, isCurrent: desktop.id == display.currentDesktopID)
+            }
+            return WindowSystemDisplay(
+                id: displayID.flatMap(Self.uuidString) ?? display.displayIdentifier,
+                name: displayID.flatMap { screens[$0]?.localizedName } ?? display.displayIdentifier,
+                isBuiltIn: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false,
+                desktops: desktops
+            )
+        }
+    }
+
+    /// SkyLight names displays by UUID, except that the main display may appear as the literal "Main".
+    private static func displayID(forSkyLightIdentifier identifier: String) -> CGDirectDisplayID? {
+        if identifier == "Main" { return CGMainDisplayID() }
+        return activeDisplayIDs().first { uuidString($0) == identifier }
+    }
+
+    private static func uuidString(_ displayID: CGDirectDisplayID) -> String? {
+        guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else { return nil }
+        return CFUUIDCreateString(nil, uuid) as String
+    }
+
+    private static func activeDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
+        return Array(ids.prefix(Int(count)))
+    }
+
+    // MARK: - Windows
+
+    public func readWindows() -> [WindowSystemWindow] {
+        var desktopKinds: [UInt64: DesktopKind] = [:]
+        for display in readDisplays() {
+            for desktop in display.desktops { desktopKinds[desktop.id] = desktop.kind }
+        }
+        let infos = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+
+        var accessibilityByPID: [pid_t: [UInt32: AccessibilityWindow]] = [:]
+        var windows: [WindowSystemWindow] = []
+        for info in infos {
+            guard (info[kCGWindowLayer as String] as? Int) == 0,
+                  let number = info[kCGWindowNumber as String] as? NSNumber,
+                  let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular,
+                  let bundleID = app.bundleIdentifier
+            else { continue }
+            let windowID = number.uint32Value
+            let desktops = (skyLight.desktopIDs(forWindow: windowID) ?? []).filter { desktopKinds[$0] != nil }
+            guard !desktops.isEmpty else { continue }  // off every desktop: a helper or offscreen buffer
+
+            if accessibilityByPID[pid] == nil { accessibilityByPID[pid] = Self.accessibilityWindows(pid: pid) }
+            let accessibility = accessibilityByPID[pid]?[windowID]
+            let desktopID = desktops.count == 1 ? desktops[0] : nil
+
+            windows.append(WindowSystemWindow(
+                id: windowID,
+                bundleID: bundleID,
+                appName: app.localizedName ?? bundleID,
+                title: (info[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? accessibility?.title ?? "",
+                desktopID: desktopID,
+                isFullscreen: desktopID.map { desktopKinds[$0] == .fullscreen } ?? false,
+                chromeProfile: bundleID == Self.chromeBundleID ? (accessibility.flatMap { ChromeProfileReader.profile(of: $0.element) } ?? .unknown) : .notChrome,
+                // Accessibility only reaches windows on visible desktops; assume the rest are standard.
+                isStandard: accessibility.map { $0.subrole == kAXStandardWindowSubrole as String } ?? true
+            ))
+        }
+        return windows
+    }
+
+    private struct AccessibilityWindow {
+        let element: AXUIElement
+        let title: String?
+        let subrole: String?
+    }
+
+    private static func accessibilityWindows(pid: pid_t) -> [UInt32: AccessibilityWindow] {
+        guard AXIsProcessTrusted() else { return [:] }
+        let app = AXUIElementCreateApplication(pid)
+        guard let elements: [AXUIElement] = AX.value(app, kAXWindowsAttribute) else { return [:] }
+        var result: [UInt32: AccessibilityWindow] = [:]
+        for element in elements {
+            guard let id = PrivateAccessibility.windowID(of: element) else { continue }
+            result[id] = AccessibilityWindow(element: element, title: AX.value(element, kAXTitleAttribute), subrole: AX.value(element, kAXSubroleAttribute))
+        }
+        return result
+    }
+
+    /// Chrome profile reading, for the Doctor: why a Chrome window's profile might be unknown.
+    public static var chromeProfileLimitations: [String] {
+        var notes: [String] = []
+        if !AXIsProcessTrusted() { notes.append("Accessibility isn't granted, so no Chrome window can be inspected.") }
+        if !PrivateAccessibility.canMapWindows { notes.append("`\(PrivateAccessibility.windowIDSymbol)` is missing, so Accessibility windows can't be matched to window IDs.") }
+        notes.append("Accessibility only reaches windows on desktops currently visible; Chrome windows on other desktops report an unknown profile.")
+        return notes
+    }
+}
+
+/// Reads a Chrome window's profile from its toolbar avatar button.
+///
+/// The button's accessible text contains the profile's name, so the window's buttons are matched
+/// against the profile names in Chrome's `Local State`. Unverified on the user's Mac until the live demo.
+enum ChromeProfileReader {
+    private static let maxDepth = 10
+
+    static func profile(of window: AXUIElement) -> ChromeProfile? {
+        let names = profileNames()
+        if names.count == 1 { return .known(names[0]) }
+        guard !names.isEmpty else { return nil }
+        var found = Set<String>()
+        collectButtonText(window, depth: 0) { text in
+            for name in names where text.localizedCaseInsensitiveContains(name) { found.insert(name) }
+        }
+        // A profile name contained in another ("Work" in "Work 2") prefers the longest match.
+        let longest = found.max { $0.count < $1.count }
+        guard let longest, found.allSatisfy({ longest.localizedCaseInsensitiveContains($0) }) else { return nil }
+        return .known(longest)
+    }
+
+    private static func collectButtonText(_ element: AXUIElement, depth: Int, _ visit: (String) -> Void) {
+        guard depth < maxDepth else { return }
+        let role: String? = AX.value(element, kAXRoleAttribute)
+        if role == kAXButtonRole as String || role == kAXPopUpButtonRole as String || role == kAXMenuButtonRole as String {
+            for attribute in [kAXDescriptionAttribute, kAXTitleAttribute, kAXHelpAttribute] {
+                if let text: String = AX.value(element, attribute), !text.isEmpty { visit(text) }
+            }
+            return
+        }
+        // Skip the web page itself: its buttons belong to websites, not Chrome.
+        if role == "AXWebArea" { return }
+        for child in AX.value(element, kAXChildrenAttribute) as [AXUIElement]? ?? [] {
+            collectButtonText(child, depth: depth + 1, visit)
+        }
+    }
+
+    /// The profile names Chrome lists in `Local State`.
+    static func profileNames() -> [String] {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome/Local State")
+        guard let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cache = (root["profile"] as? [String: Any])?["info_cache"] as? [String: Any]
+        else { return [] }
+        return cache.values.compactMap { ($0 as? [String: Any])?["name"] as? String }.sorted()
+    }
+}
+
+/// Small typed wrappers over the Accessibility C API.
+enum AX {
+    static func value<T>(_ element: AXUIElement, _ attribute: String) -> T? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? T
+    }
+}
