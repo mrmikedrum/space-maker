@@ -249,7 +249,7 @@ public final class MacWindowSystem: WindowSystem {
     public func setFullscreen(_ windowID: UInt32, _ isFullscreen: Bool) -> Bool {
         guard let info = Self.windowInfo(windowID),
               let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element ?? reachByShowing(windowID, ownedBy: pid)
+              let element = Self.element(of: windowID, ownedBy: pid)
         else { return false }
         func settled() -> Bool {
             guard let desktops = skyLight.desktopIDs(forWindow: windowID), desktops.count == 1 else { return false }
@@ -270,19 +270,13 @@ public final class MacWindowSystem: WindowSystem {
         return false
     }
 
-    /// Accessibility only reaches windows on the desktop being shown, so a window on another desktop (a fullscreen
-    /// window Restore has to take out and put back, say) is brought to the front first, switching to its desktop.
-    private func reachByShowing(_ windowID: UInt32, ownedBy pid: pid_t) -> AXUIElement? {
-        focusWindow(windowID)
-        let deadline = Date().addingTimeInterval(Self.reachTimeout)
-        repeat {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-            if let element = Self.accessibilityWindows(pid: pid)[windowID]?.element { return element }
-        } while Date() < deadline
-        return nil
+    /// A window's Accessibility element wherever it is. An app's window list only covers the desktop being shown,
+    /// so a window on another desktop (a fullscreen window Restore has to take out and put back, say) is reached
+    /// through `PrivateAccessibility.windowsOnEveryDesktop` instead.
+    private static func element(of windowID: UInt32, ownedBy pid: pid_t) -> AXUIElement? {
+        accessibilityWindows(pid: pid)[windowID]?.element
+            ?? PrivateAccessibility.windowsOnEveryDesktop(pid: pid, wanted: [windowID])[windowID]
     }
-
-    private static let reachTimeout: TimeInterval = 2
 
     /// Finds the window through Chrome's AppleScript by its title and bounds, since AppleScript window IDs aren't WindowServer IDs.
     public func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult {
@@ -443,7 +437,7 @@ extension MacWindowSystem {
     /// Sets the frame through Accessibility, which only reaches windows on desktops currently showing.
     public func setFrame(_ windowID: UInt32, to frame: WindowFrame) -> Bool {
         guard let pid = (Self.windowInfo(windowID)?[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element
+              let element = Self.element(of: windowID, ownedBy: pid)
         else { return false }
         var origin = CGPoint(x: frame.x, y: frame.y)
         var size = CGSize(width: frame.width, height: frame.height)
