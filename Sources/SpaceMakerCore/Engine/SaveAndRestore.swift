@@ -287,6 +287,7 @@ extension Engine {
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
             defer { rememberWorldForSoftDrift() }
             if handle == nil { displayChange.neverSettled = false }  // the user's Restore all catches up
+            defer { if handle == nil { noteFramesAfterChange() } }  // and is where the next display change starts from
 
             let places = fullscreenPlaces(displays)
             var targets = windows.filter { !isIgnored($0) }

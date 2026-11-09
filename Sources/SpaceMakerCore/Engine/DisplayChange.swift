@@ -12,6 +12,8 @@ struct DisplayChangeProgress {
     /// Where windows were, by window ID, the last time the engine looked at the world with the displays settled.
     /// macOS can shove windows before it reports a reconfiguration, so this is kept up to date beforehand.
     var stableFrames: [UInt32: FrameBefore] = [:]
+    /// The connected displays when `stableFrames` was taken. Nil until the first look.
+    var stableDisplays: Set<String>?
     /// `stableFrames` as they were when the first reconfiguration event since the last automatic Restore arrived.
     /// While this is set, a display change is under way and `stableFrames` is left alone.
     var framesBefore: [UInt32: FrameBefore]?
@@ -69,6 +71,9 @@ extension Engine {
         if displayChange.reads >= Self.desktopSettleMaxReads {
             displayChange.lastRead = nil
             displayChange.neverSettled = true
+            // The change is over. Nothing is recorded until the next one settles or the user Restores all, and a
+            // later change puts back what was recorded before this one.
+            displayChange.framesBefore = nil
             onChange?()
             return
         }
@@ -93,14 +98,30 @@ extension Engine {
             _ = restore(handle: nil)
             putBackFrames(framesBefore)
         }
-        noteStableFrames()
+        noteFramesAfterChange()
     }
 
     /// Records where windows are now, unless a display change is under way (then the world may be half-rearranged).
     /// Called whenever the engine looks at the world: commands, status and window events.
+    /// Displays that differ from the last record mean a change has begun even if its event hasn't arrived yet,
+    /// so the record stays as it was until that change settles or the user Restores all.
     func noteStableFrames() {
-        guard displayChange.framesBefore == nil, !isMovingWindows else { return }
+        guard displayChange.stableDisplays == nil || displayChange.stableDisplays == connectedDisplays() else { return }
+        noteFramesAfterChange()
+    }
+
+    /// Takes the new record of where windows are once a display change has finished: settled or Restored by the user.
+    /// Nothing is recorded while a change is under way, the last one never settled, or windows are moving.
+    func noteFramesAfterChange() {
+        guard displayChange.framesBefore == nil, !displayChange.neverSettled, !isMovingWindows else { return }
         displayChange.stableFrames = currentFrames()
+        displayChange.stableDisplays = connectedDisplays()
+    }
+
+    /// Every connected display, Guest Displays included: one connecting is a change too.
+    /// Desktops are left out, since adding one in Mission Control sends no reconfiguration event.
+    private func connectedDisplays() -> Set<String> {
+        Set(windowSystem.readDisplays().map(\.id))
     }
 
     /// Every normal window's position and known display, keyed by window ID. Guest Displays are left out.
