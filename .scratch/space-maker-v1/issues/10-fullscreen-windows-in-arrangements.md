@@ -21,3 +21,4 @@ If a window is on the right display but in the wrong order (including one that s
 - Matching: a fullscreen Assignment whose window left fullscreen takes the one otherwise-matching unmatched window, so "take Game main out of fullscreen, Restore" works. Unassigned fullscreen windows are now `new` Drift. Limitation: an unnamed Work main that leaves fullscreen alongside an unnamed Work second can be mistaken for Work second.
 - Adapter: sets `AXFullScreen` and polls SkyLight until the window is on a desktop of the right kind (3 s timeout). Accessibility can't reach windows on hidden desktops, so those become Soft Drift. Real-Mac demo pending live demo (user away).
 - `save` by handle and `move_window` still refuse fullscreen windows, now with a reason instead of "yet".
+- After merging 09: fullscreen windows get no saved position (they fill the display); Placement (05) still skips fullscreen windows, since Chrome restores them to fullscreen itself.
