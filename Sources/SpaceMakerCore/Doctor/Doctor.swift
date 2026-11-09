@@ -38,9 +38,9 @@ public struct CheckResult: Sendable {
 
 public struct DoctorCheck: Sendable {
     public let title: String
-    public let run: @MainActor @Sendable () -> CheckOutcome
+    public let run: @MainActor @Sendable () async -> CheckOutcome
 
-    public init(title: String, run: @escaping @MainActor @Sendable () -> CheckOutcome) {
+    public init(title: String, run: @escaping @MainActor @Sendable () async -> CheckOutcome) {
         self.title = title
         self.run = run
     }
@@ -69,14 +69,14 @@ public final class Doctor {
     }
 
     /// Returns the results; the report has been written to `reportURL` and linked from `doctor-latest.md`.
-    public func run() throws -> [CheckResult] {
+    public func run() async throws -> [CheckResult] {
         try FileManager.default.createDirectory(at: reportURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try linkLatest()
 
         var results: [CheckResult] = []
         for check in checks {
             try write(results: results, running: check.title)
-            results.append(CheckResult(title: check.title, outcome: check.run()))
+            results.append(CheckResult(title: check.title, outcome: await check.run()))
         }
         try write(results: results, running: nil)
         return results

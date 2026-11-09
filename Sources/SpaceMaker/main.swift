@@ -29,12 +29,15 @@ MainActor.assumeIsolated {
         exit(64)
     }
     let doctor = MenuBarApp.makeDoctor(skyLight: SkyLight())
-    do {
-        let results = try doctor.run()
-        print(doctor.reportURL.path)
-        exit(results.allSatisfy(\.passed) ? 0 : 1)
-    } catch {
-        FileHandle.standardError.write(Data("Doctor could not write its report: \(error.localizedDescription)\n".utf8))
-        exit(2)
+    Task { @MainActor in
+        do {
+            let results = try await doctor.run()
+            print(doctor.reportURL.path)
+            exit(results.allSatisfy(\.passed) ? 0 : 1)
+        } catch {
+            FileHandle.standardError.write(Data("Doctor could not write its report: \(error.localizedDescription)\n".utf8))
+            exit(2)
+        }
     }
+    RunLoop.main.run()  // keeps the main thread free for ScreenCaptureKit while the Doctor runs
 }

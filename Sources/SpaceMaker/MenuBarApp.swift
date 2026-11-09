@@ -7,7 +7,7 @@ import SpaceMakerCore
 final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let skyLight = SkyLight()
     private lazy var windowSystem = MacWindowSystem(skyLight: skyLight)
-    private lazy var engine = Engine(windowSystem: windowSystem, layoutURL: LayoutFile.defaultURL) { [unowned self] in self.runDoctorForReport() }
+    private lazy var engine = Engine(windowSystem: windowSystem, layoutURL: LayoutFile.defaultURL)
     private var statusItem: NSStatusItem?
     private var server: CommandServer?
     private var layoutWatcher: LayoutWatcher?
@@ -27,8 +27,10 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let engine = engine
         do {
-            server = try CommandServer.start(socketPath: CommandSocket.defaultPath) { request in
-                await engine.perform(request)
+            server = try CommandServer.start(socketPath: CommandSocket.defaultPath) { [weak self] request in
+                // The Doctor is asynchronous (it awaits ScreenCaptureKit), so it's served here rather than by the engine.
+                if request.command == "doctor", let self { return CommandReply(text: await self.runDoctorForReport()) }
+                return await engine.perform(request)
             }
         } catch CommandRelayError.alreadyRunning {
             log("Another Space Maker is already running; quitting.")
@@ -49,7 +51,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             MainActor.assumeIsolated { self?.refreshIcon() }
         }
         // Doctor at launch, once the menu bar item is showing.
-        DispatchQueue.main.async { _ = self.runDoctor() }
+        Task { _ = await self.runDoctor() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -240,7 +242,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func doctorClicked() {
-        if let report = runDoctor() { NSWorkspace.shared.open(report) }
+        Task { if let report = await runDoctor() { NSWorkspace.shared.open(report) } }
     }
 
     @objc private func openLayoutClicked() {
@@ -262,10 +264,10 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Doctor
 
     /// Runs the Doctor, turns the icon red if any check failed, and returns the report's location.
-    private func runDoctor() -> URL? {
+    private func runDoctor() async -> URL? {
         let doctor = Self.makeDoctor(skyLight: skyLight, windowSystem: windowSystem)
         do {
-            let results = try doctor.run()
+            let results = try await doctor.run()
             engine.setMovesDisabled(because: StandardDoctor.moveFailure(in: results))
             showDoctorFailed(results.contains(where: \.failed))
             updatePins(from: results)
@@ -287,8 +289,8 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func runDoctorForReport() -> String {
-        guard let report = runDoctor() else { return "The Doctor couldn't write its report to \(StandardDoctor.defaultLogsDirectory.path)." }
+    private func runDoctorForReport() async -> String {
+        guard let report = await runDoctor() else { return "The Doctor couldn't write its report to \(StandardDoctor.defaultLogsDirectory.path)." }
         return (try? String(contentsOf: report, encoding: .utf8)) ?? "The Doctor wrote its report to \(report.path) but it couldn't be read back."
     }
 

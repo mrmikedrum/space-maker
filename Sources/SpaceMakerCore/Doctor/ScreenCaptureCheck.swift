@@ -6,7 +6,9 @@ import AppKit
 enum ScreenCaptureCheck {
     private static let timeout: TimeInterval = 5
 
-    static func run() -> CheckOutcome {
+    /// Asynchronous on purpose: ScreenCaptureKit needs the main thread to stay responsive while it answers,
+    /// so waiting for it by blocking the main thread (even while spinning the run loop) times out.
+    static func run() async -> CheckOutcome {
         guard CGPreflightScreenCaptureAccess() else {
             return CheckOutcome(
                 .fail(suspectedCause: "Space Maker hasn't been granted Screen Recording, or Sequoia's periodic re-approval lapsed. Allow Space Maker.app under System Settings → Privacy & Security → Screen & System Audio Recording, then re-run the Doctor. Pins stay disabled until this passes."),
@@ -14,13 +16,17 @@ enum ScreenCaptureCheck {
             )
         }
 
-        let box = ResultBox()
-        Task.detached { box.set(await captureOneWindow()) }
-        let deadline = Date().addingTimeInterval(timeout)
-        while box.get() == nil, Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        let result = await withTaskGroup(of: Result?.self) { group in
+            group.addTask { await captureOneWindow() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
-        guard let result = box.get() else {
+        guard let result else {
             return CheckOutcome(
                 .fail(suspectedCause: "ScreenCaptureKit didn't answer within \(Int(timeout))s. Its daemon may be stuck; try again after logging out and in. Pins stay disabled until this passes."),
                 summary: "ScreenCaptureKit timed out."
@@ -64,12 +70,5 @@ enum ScreenCaptureCheck {
         } catch {
             return .failed(String(describing: error))
         }
-    }
-
-    private final class ResultBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value: Result?
-        func set(_ result: Result) { lock.withLock { value = result } }
-        func get() -> Result? { lock.withLock { value } }
     }
 }

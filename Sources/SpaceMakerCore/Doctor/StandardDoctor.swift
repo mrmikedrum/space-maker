@@ -25,7 +25,7 @@ public enum StandardDoctor {
                 DoctorCheck(title: symbolsTitle) { symbols(skyLight) },
                 DoctorCheck(title: "Display and desktop enumeration") { enumeration(skyLight) },
                 DoctorCheck(title: "Chrome profiles") { chromeProfiles(windowSystem) },
-                DoctorCheck(title: screenCaptureTitle) { ScreenCaptureCheck.run() },
+                DoctorCheck(title: screenCaptureTitle) { await ScreenCaptureCheck.run() },
                 DoctorCheck(title: "Chrome Automation") { chromeAutomation() },
                 DoctorCheck(title: liveMoveTitle) { LiveMoveTest(skyLight: skyLight, helperExecutable: helperExecutable).run() },
             ],
