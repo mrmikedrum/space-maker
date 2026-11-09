@@ -73,6 +73,26 @@ struct RelayRobustnessTests {
         #expect(later == Self.ok)
     }
 
+    @Test func aFloodOfSilentConnectionsBeyondTheCapIsTurnedAwayAtOnce() throws {
+        let socket = ShimSmokeTests.temporarySocketPath()
+        let server = try CommandServer.start(socketPath: socket, limits: .init(readTimeout: 5, maxConnections: 2)) { _ in Self.ok }
+        defer { server.stop() }
+
+        let held = try [RawClient(socket), RawClient(socket)]  // the cap, held open and silent
+        defer { for client in held { client.close() } }
+        // Each extra connection sends nothing. None may tie up the server until its 5 s read timeout:
+        // each is told it's busy and hung up on before this client's own 3 s timeout.
+        for _ in 0..<10 {  // in waves no bigger than the listen backlog
+            let wave = try (0..<10).map { _ in try RawClient(socket) }
+            for client in wave {
+                let (reply, closed) = client.readUntilClosed()
+                client.close()
+                #expect(closed)
+                #expect(String(decoding: reply, as: UTF8.self).contains("busy"))
+            }
+        }
+    }
+
     @Test func theSocketAndItsFolderAreTheOwnersAlone() throws {
         let socket = ShimSmokeTests.temporarySocketPath()
         let server = try CommandServer.start(socketPath: socket) { _ in Self.ok }

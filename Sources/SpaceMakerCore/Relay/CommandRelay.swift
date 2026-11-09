@@ -114,8 +114,14 @@ public final class CommandServer: @unchecked Sendable {
         while true {
             let connection = accept(listener, nil, nil)
             guard connection >= 0 else {
-                if errno == EINTR || errno == ECONNABORTED { continue }
-                return  // the listener was closed
+                switch errno {
+                case EINTR, ECONNABORTED: continue
+                case EBADF, EINVAL, ENOTSOCK: return  // the listener was closed
+                default:
+                    // Out of descriptors or memory (EMFILE, ENFILE, ENOBUFS, ENOMEM): wait for some to free up, keep accepting.
+                    usleep(Self.acceptBackoffMicroseconds)
+                    continue
+                }
             }
             // Darwin refuses socket options once the client has hung up, and then a reply would raise SIGPIPE.
             guard UnixSocket.prepare(connection, readTimeout: limits.readTimeout, writeTimeout: limits.writeTimeout),
@@ -125,7 +131,7 @@ public final class CommandServer: @unchecked Sendable {
                 continue
             }
             guard claimConnection() else {
-                DispatchQueue.global().async { self.turnAway(connection) }
+                turnAway(connection)  // right here: an overflow connection never gets a worker of its own
                 continue
             }
             DispatchQueue.global().async { self.serve(connection) }
@@ -170,10 +176,26 @@ public final class CommandServer: @unchecked Sendable {
         }
     }
 
-    /// Reads the request (closing with it unread could reset the connection and lose the reply), then says why it won't be served.
+    /// How long the accept loop waits before trying again when the process is out of descriptors.
+    private static let acceptBackoffMicroseconds: useconds_t = 50_000
+
+    private static let busyLine = try! JSONEncoder().encode(
+        CommandReply(text: "Space Maker is busy with other requests. Try again in a moment.", isError: true))
+
+    /// Says the server is busy and hangs up, without ever waiting on the client: whatever of the request has
+    /// already arrived is drained, the reply is written only if it fits at once, and the connection is closed.
+    /// The client reads the reply even if its own write then fails.
     private func turnAway(_ connection: Int32) {
-        _ = UnixSocket.readLine(from: connection, maxBytes: limits.maxRequestBytes, deadline: Date().addingTimeInterval(limits.readTimeout))
-        reply(CommandReply(text: "Space Maker is busy with other requests. Try again in a moment.", isError: true), on: connection)
+        _ = fcntl(connection, F_SETFL, fcntl(connection, F_GETFL) | O_NONBLOCK)
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var drained = 0
+        while drained < limits.maxRequestBytes {
+            let count = read(connection, &buffer, buffer.count)
+            guard count > 0 else { break }
+            drained += count
+        }
+        _ = UnixSocket.writeLine(Self.busyLine, to: connection)
+        close(connection)
     }
 
     /// Writes the reply and closes the connection. A client that already hung up just doesn't get it.
