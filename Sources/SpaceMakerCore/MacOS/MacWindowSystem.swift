@@ -257,6 +257,12 @@ public final class MacWindowSystem: WindowSystem {
             return kind == (isFullscreen ? .fullscreen : .regular)
         }
         if settled() { return true }
+        if isFullscreen {
+            // macOS puts a new fullscreen desktop after the desktop being shown, not the window's own,
+            // so bring the window (and its desktop) to the front first.
+            focusWindow(windowID)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        }
         guard AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, (isFullscreen ? kCFBooleanTrue : kCFBooleanFalse)) == .success
         else { return false }
         let deadline = Date().addingTimeInterval(Self.fullscreenSettleTimeout)
@@ -448,7 +454,7 @@ extension MacWindowSystem {
         }
         let bounds = (Self.windowInfo(windowID)?[kCGWindowBounds as String] as? NSDictionary)
             .flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
-        let mirror = PinMirror(windowID: windowID, sourceSize: bounds.size, slot: mirrors.count) { [weak self] in
+        let mirror = PinMirror(windowID: windowID, sourceFrame: bounds) { [weak self] in
             self?.onEvent?(.pinClicked(windowID))
         }
         mirror.onCaptureStopped = { [weak self] in

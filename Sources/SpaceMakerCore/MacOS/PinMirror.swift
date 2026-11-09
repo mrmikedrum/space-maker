@@ -20,13 +20,21 @@ final class PinMirror {
     /// The source window's stream stopped with an error, which is how a closed window shows up.
     var onCaptureStopped: (() -> Void)?
 
-    init(windowID: UInt32, sourceSize: CGSize, slot: Int, onClick: @escaping @MainActor () -> Void) {
+    /// `sourceFrame` is the pinned window's frame in WindowServer coordinates (top-left origin). The mirror starts
+    /// exactly where the window is and the same size, like Picture in Picture; after that it stays wherever the
+    /// user drags or resizes it, since hiding and showing it keeps its frame.
+    init(windowID: UInt32, sourceFrame: CGRect, onClick: @escaping @MainActor () -> Void) {
         self.windowID = windowID
-        let width = min(480, max(160, sourceSize.width / 3))
-        let height = sourceSize.width > 0 ? width * sourceSize.height / sourceSize.width : width * 0.75
-        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let offset = CGFloat(slot % 6) * 28
-        let frame = NSRect(x: visible.maxX - width - 20 - offset, y: visible.maxY - height - 20 - offset, width: width, height: height)
+        let sourceSize = sourceFrame.size
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        var frame = NSRect(
+            x: sourceFrame.minX, y: primaryHeight - sourceFrame.maxY,
+            width: max(160, sourceFrame.width), height: max(90, sourceFrame.height)
+        )
+        if sourceFrame.isEmpty {
+            let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            frame = NSRect(x: visible.maxX - 500, y: visible.maxY - 380, width: 480, height: 360)
+        }
 
         panel = MirrorPanel(contentRect: frame)
         if sourceSize.width > 0, sourceSize.height > 0 { panel.contentAspectRatio = sourceSize }

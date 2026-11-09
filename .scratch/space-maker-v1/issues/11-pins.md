@@ -2,7 +2,7 @@
 
 **What to build:** The user Pins the frontmost window from the menu bar, or any window via `pin`/`unpin` on MCP. A floating live mirror of that window appears on every regular Space. It does not appear over fullscreen-app desktops.
 
-The user can drag and resize the mirror. It hides while the real window is visible on the active Space, and clicking it switches to the real window's Space and focuses the window.
+The mirror starts exactly where the window is and the same size; the user can drag and resize it, and it keeps that frame across Space switches. It hides while the real window is visible on the active Space, and clicking it switches to the real window's Space and focuses the window.
 
 Several Pins can exist at once. A Pin disappears when its window closes. Pinning a fullscreen window is refused with a reason. Pins are not saved.
 

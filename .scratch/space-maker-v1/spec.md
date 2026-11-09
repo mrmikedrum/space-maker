@@ -91,7 +91,7 @@ The main interface is an MCP server, so an agent can inspect, Save, Restore, mov
 47. As the user, I want to Pin the frontmost window from the menu bar, so that I can keep an eye on it while I switch Spaces.
 48. As the user, I want to Pin and unpin windows through MCP, so that an agent can do it for me.
 49. As the user, I want a Pin to appear on every regular Space and float above other windows, so that I can always see it.
-50. As the user, I want to drag and resize a Pin, so that it sits where there's room.
+50. As the user, I want a Pin to start exactly where its window is and the same size, then stay wherever I drag or resize it, so that it behaves like Picture in Picture.
 51. As the user, I want a Pin to hide while the real window is visible, so that I don't see two copies.
 52. As the user, I want clicking a Pin to take me to the real window's Space and focus it, so that I can interact with it.
 53. As the user, I want Pins not to appear over fullscreen-app desktops, so that fullscreen stays clean.
