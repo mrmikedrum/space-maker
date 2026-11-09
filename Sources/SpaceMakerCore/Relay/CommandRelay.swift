@@ -125,7 +125,7 @@ public final class CommandServer: @unchecked Sendable {
                 continue
             }
             guard claimConnection() else {
-                reply(CommandReply(text: "Space Maker is busy with other requests. Try again in a moment.", isError: true), on: connection)
+                DispatchQueue.global().async { self.turnAway(connection) }
                 continue
             }
             DispatchQueue.global().async { self.serve(connection) }
@@ -170,6 +170,12 @@ public final class CommandServer: @unchecked Sendable {
         }
     }
 
+    /// Reads the request (closing with it unread could reset the connection and lose the reply), then says why it won't be served.
+    private func turnAway(_ connection: Int32) {
+        _ = UnixSocket.readLine(from: connection, maxBytes: limits.maxRequestBytes, deadline: Date().addingTimeInterval(limits.readTimeout))
+        reply(CommandReply(text: "Space Maker is busy with other requests. Try again in a moment.", isError: true), on: connection)
+    }
+
     /// Writes the reply and closes the connection. A client that already hung up just doesn't get it.
     private func reply(_ reply: CommandReply, on connection: Int32) {
         _ = UnixSocket.writeLine(try! JSONEncoder().encode(reply), to: connection)
@@ -182,11 +188,10 @@ public enum CommandClient {
     public static func send(_ request: CommandRequest, socketPath: String) throws -> CommandReply {
         let connection = try UnixSocket.connect(to: socketPath)
         defer { close(connection) }
-        guard UnixSocket.writeLine(try JSONEncoder().encode(request), to: connection) else {
-            throw CommandRelayError.socket("Space Maker closed the connection before reading the request.")
-        }
+        // A failed write still reads on: Space Maker may have said why it hung up (such as being busy).
+        let sent = UnixSocket.writeLine(try JSONEncoder().encode(request), to: connection)
         guard case .line(let line) = UnixSocket.readLine(from: connection, maxBytes: 64 * 1024 * 1024, deadline: nil) else {
-            throw CommandRelayError.socket("Space Maker closed the connection without replying.")
+            throw CommandRelayError.socket(sent ? "Space Maker closed the connection without replying." : "Space Maker closed the connection before reading the request.")
         }
         return try JSONDecoder().decode(CommandReply.self, from: line)
     }
