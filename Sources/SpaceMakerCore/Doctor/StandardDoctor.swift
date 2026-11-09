@@ -146,10 +146,13 @@ public enum StandardDoctor {
             case .remembered: "remembered; on a hidden desktop"
             case .unreachable: "on a hidden desktop, not seen yet"
             case .unreadable: "Accessibility reached the window but found no profile name"
+            case .managedBadge: "managed profile: Chrome shows only a Work/School badge, so it's matched by name"
             case nil: "not inspected"
             }
-            return "Window \(window.id) \"\(window.title)\": profile \(profile) (\(source))"
+            let buttons = windowSystem.chromeButtonTexts(window.id).map { "; toolbar buttons: " + $0.map { "“\($0)”" }.joined(separator: ", ") } ?? ""
+            return "Window \(window.id) \"\(window.title)\": profile \(profile) (\(source))\(buttons)"
         }
+        details.append("Chrome's profiles: " + ChromeProfileReader.profileNames().map { "“\($0)”" }.joined(separator: ", "))
         let unreadable = chrome.filter { sources[$0.id] == .unreadable }.count
         let unreachable = chrome.filter { $0.chromeProfile == .unknown && sources[$0.id] != .unreadable }.count
         if unreadable > 0 {

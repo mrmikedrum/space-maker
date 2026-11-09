@@ -184,7 +184,7 @@ extension Engine {
                 window.isFullscreen ? fullscreenPlaces[window.id] : window.desktopID.flatMap { namesByDesktop[$0] }
             }
             let saving = Set(windows.filter { placeOf($0) != nil }.map(\.id))
-            let namingNotes = autoNameAmbiguousChromeWindows(&windows, saving: saving)
+            let namingNotes = autoNameChromeWindows(&windows, saving: saving)
 
             // Every window on a Space gets an Assignment. A live window's old Assignment is kept only if it isn't on a
             // Space now; a closed window's is kept only if it's named.
@@ -259,7 +259,7 @@ extension Engine {
         var onSpaces = standard.filter { other in
             other.id == window.id || (!isIgnored(other) && !other.isFullscreen && other.desktopID.flatMap { spaces[$0] } != nil)
         }
-        let notes = autoNameAmbiguousChromeWindows(&onSpaces, saving: [window.id], among: Set(onSpaces.map(\.id)))
+        let notes = autoNameChromeWindows(&onSpaces, saving: [window.id], among: Set(onSpaces.map(\.id)))
         let named = onSpaces.first { $0.id == window.id } ?? window
         let assignment = Self.assignment(
             for: named, on: space, replacing: old.map { layout.assignments[$0] }, savingFrameIn: savingFrame ? knownDisplays(displays) : nil

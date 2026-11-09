@@ -17,11 +17,11 @@ struct FullscreenTests {
             .fullscreen(901), .regular(11, current: true), .regular(12), .regular(13), .fullscreen(902),
         ])]
         world.windows = [
-            .chrome(601, profile: .known("Game"), title: "Twitch", desktop: 901, fullscreen: true),
+            .chrome(601, profile: .known("Game"), title: "Twitch", desktop: 901, fullscreen: true, name: "Twitch"),
             .app(501, "com.TickTick.task.mac", "TickTick", title: "Today", desktop: 11),
-            .chrome(602, profile: .known("Personal"), title: "Mail", desktop: 12),
-            .chrome(603, profile: .known("Work"), title: "Docs", desktop: 13),
-            .chrome(604, profile: .known("Work"), title: "Calendar", desktop: 902, fullscreen: true),
+            .chrome(602, profile: .known("Personal"), title: "Mail", desktop: 12, name: "Mail"),
+            .chrome(603, profile: .known("Work"), title: "Docs", desktop: 13, name: "Docs"),
+            .chrome(604, profile: .known("Work"), title: "Calendar", desktop: 902, fullscreen: true, name: "Calendar"),
         ]
     }
 
@@ -191,7 +191,7 @@ struct FullscreenTests {
         // Chrome quits, taking Work main and its fullscreen desktop with it, and brings it back as a normal window.
         world.closeWindow(604)
         world.displays[0].desktops.removeAll { $0.id == 902 }
-        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 11))
+        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 11, name: "Calendar"))
 
         #expect(world.window(1604)?.isFullscreen == true)
         #expect(world.order(of: "built-in") == ["fullscreen 601", "11", "12", "13", "fullscreen 1604"])
@@ -206,7 +206,7 @@ struct FullscreenTests {
         world.closeWindow(604)
         world.displays[1].desktops.removeAll { $0.id == 902 }
         world.displays[0].desktops.append(.fullscreen(903))
-        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 903, fullscreen: true))
+        world.openWindow(.chrome(1604, profile: .known("Work"), title: "Calendar", desktop: 903, fullscreen: true, name: "Calendar"))
 
         #expect(world.window(1604)?.isFullscreen == true)
         #expect(world.order(of: "dell-uuid") == ["21", "22", "fullscreen 1604"])

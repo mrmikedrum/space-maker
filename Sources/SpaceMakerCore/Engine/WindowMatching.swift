@@ -89,10 +89,10 @@ extension Engine {
         return matched
     }
 
-    /// Names the Chrome windows Save is about to assign (`saving`) that their profile and fullscreen flag can't tell apart
-    /// from another unnamed window `among` those being considered (by default, the ones being saved), including any whose
-    /// profile is unknown, so that they keep their identity across a relaunch. Updates `windows` and returns what happened, for Save's reply.
-    func autoNameAmbiguousChromeWindows(_ windows: inout [WindowSystemWindow], saving: Set<UInt32>, among: Set<UInt32>? = nil) -> [String] {
+    /// Names every unnamed Chrome window Save is about to assign (`saving`), so it keeps its identity across a relaunch:
+    /// a profile can only be read while a window is on a visible desktop, and managed profiles can't be read at all.
+    /// `among` is accepted for Save one's callers. Updates `windows` and returns what happened, for Save's reply.
+    func autoNameChromeWindows(_ windows: inout [WindowSystemWindow], saving: Set<UInt32>, among: Set<UInt32>? = nil) -> [String] {
         struct Kind: Hashable {
             var profile: String?
             var isFullscreen: Bool
@@ -109,8 +109,7 @@ extension Engine {
         var taken = Set(windows.compactMap(\.name) + layout.assignments.compactMap(\.window.name))
         var named: [String] = []
         var problems: [String] = []
-        // A window whose profile can't be read (it's on a hidden desktop) can only be told apart by a name.
-        let ambiguous = kinds.filter { $0.key.profile == nil || $0.value.count > 1 }.sorted { ($0.key.profile ?? "", $0.key.isFullscreen ? 1 : 0) < ($1.key.profile ?? "", $1.key.isFullscreen ? 1 : 0) }
+        let ambiguous = kinds.sorted { ($0.key.profile ?? "", $0.key.isFullscreen ? 1 : 0) < ($1.key.profile ?? "", $1.key.isFullscreen ? 1 : 0) }
         naming: for (kind, indices) in ambiguous {
             for index in indices.sorted(by: { windows[$0].id < windows[$1].id }) where saving.contains(windows[index].id) {
                 let base = kind.profile ?? "Chrome"
@@ -122,7 +121,7 @@ extension Engine {
                     windows[index].name = name
                     windows[index].title = name
                 case .denied(let reason):
-                    problems.append("Couldn't name Chrome windows that look alike, so they may be mixed up after Chrome relaunches: \(reason)")
+                    problems.append("Couldn't name Chrome windows, so they may be mixed up after Chrome relaunches: \(reason)")
                     break naming
                 case .failed(let reason):
                     problems.append("Couldn't name \(handle(for: windows[index].id)): \(reason)")
@@ -130,7 +129,7 @@ extension Engine {
             }
         }
         var lines: [String] = []
-        if !named.isEmpty { lines.append("Named \(named.count) Chrome window\(named.count == 1 ? "" : "s") that looked alike: \(named.joined(separator: ", ")).") }
+        if !named.isEmpty { lines.append("Named \(named.count) Chrome window\(named.count == 1 ? "" : "s") so \(named.count == 1 ? "it's" : "they're") recognized after Chrome relaunches: \(named.joined(separator: ", ")).") }
         return lines + problems
     }
 

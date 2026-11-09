@@ -27,6 +27,9 @@ public final class MacWindowSystem: WindowSystem {
         case unreachable
         /// Accessibility reached the window but no profile name was found on it.
         case unreadable
+        /// The window's profile button shows only Chrome's managed-account badge ("Work" or "School"),
+        /// which doesn't say which profile it is. Such windows are matched by name.
+        case managedBadge
     }
 
     public private(set) var chromeProfileSources: [UInt32: ChromeProfileSource] = [:]
@@ -197,11 +200,24 @@ public final class MacWindowSystem: WindowSystem {
     }
 
     /// Reads a Chrome window's profile through Accessibility, or remembers it from when the window was last visible.
+    /// The toolbar button text Accessibility shows for a Chrome window on a visible desktop, for the Doctor.
+    public func chromeButtonTexts(_ windowID: UInt32) -> [String]? {
+        guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: Self.chromeBundleID).first?.processIdentifier,
+              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element
+        else { return nil }
+        return ChromeProfileReader.buttonTexts(of: element)
+    }
+
     private func chromeProfile(_ windowID: UInt32, accessibility: AccessibilityWindow?) -> (ChromeProfile, ChromeProfileSource) {
         if let accessibility {
-            if case .known(let profile)? = ChromeProfileReader.profile(of: accessibility.element) {
+            switch ChromeProfileReader.profile(of: accessibility.element) {
+            case .known(let profile)?:
                 rememberedProfiles[windowID] = profile
                 return (.known(profile), .read)
+            case .unknown?:
+                return (.unknown, .managedBadge)
+            default:
+                break
             }
             return (rememberedProfiles[windowID].map(ChromeProfile.known) ?? .unknown, .unreadable)
         }
@@ -310,14 +326,30 @@ enum ChromeProfileReader {
         let names = profileNames()
         if names.count == 1 { return .known(names[0]) }
         guard !names.isEmpty else { return nil }
+        // A managed (Google Workspace) profile's button shows Chrome's "Work" or "School" badge instead of its
+        // name, so that text says nothing about which profile it is, even when a profile happens to be named "Work".
+        let badges: Set<String> = hasManagedProfile() ? ["work", "school"] : []
         var found = Set<String>()
+        var sawBadge = false
         collectButtonText(window, depth: 0) { text in
+            guard !badges.contains(text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else {
+                sawBadge = true
+                return
+            }
             for name in names where text.localizedCaseInsensitiveContains(name) { found.insert(name) }
         }
+        if found.isEmpty, sawBadge { return .unknown }
         // A profile name contained in another ("Work" in "Work 2") prefers the longest match.
         let longest = found.max { $0.count < $1.count }
         guard let longest, found.allSatisfy({ longest.localizedCaseInsensitiveContains($0) }) else { return nil }
         return .known(longest)
+    }
+
+    /// Every distinct piece of toolbar button text in a window, for the Doctor's report.
+    static func buttonTexts(of window: AXUIElement) -> [String] {
+        var texts: [String] = []
+        collectButtonText(window, depth: 0) { if !texts.contains($0) { texts.append($0) } }
+        return texts
     }
 
     private static func collectButtonText(_ element: AXUIElement, depth: Int, _ visit: (String) -> Void) {
@@ -338,13 +370,25 @@ enum ChromeProfileReader {
 
     /// The profile names Chrome lists in `Local State`.
     static func profileNames() -> [String] {
+        profiles().compactMap { $0["name"] as? String }.sorted()
+    }
+
+    /// Whether any profile is signed in to a managed (Google Workspace) account, whose button shows a badge.
+    static func hasManagedProfile() -> Bool {
+        profiles().contains { profile in
+            (profile["is_managed"] as? Int) == 1
+                || (profile["hosted_domain"] as? String).map { !$0.isEmpty && $0 != "NO_HOSTED_DOMAIN" } == true
+        }
+    }
+
+    private static func profiles() -> [[String: Any]] {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Google/Chrome/Local State")
         guard let data = try? Data(contentsOf: url),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let cache = (root["profile"] as? [String: Any])?["info_cache"] as? [String: Any]
         else { return [] }
-        return cache.values.compactMap { ($0 as? [String: Any])?["name"] as? String }.sorted()
+        return cache.values.compactMap { $0 as? [String: Any] }
     }
 }
 

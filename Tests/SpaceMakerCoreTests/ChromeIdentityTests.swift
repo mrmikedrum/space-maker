@@ -19,7 +19,7 @@ struct ChromeIdentityTests {
         ])]
     }
 
-    @Test func profileAndTheFullscreenFlagTellChromeWindowsApartWithoutAnyName() throws {
+    @Test func everySavedChromeWindowIsNamedSoItsFoundEvenWhenItsProfileCantBeReadLater() throws {
         desktops()
         world.windows = [
             .chrome(601, profile: .known("Work"), title: "Inbox", desktop: 12),
@@ -28,13 +28,15 @@ struct ChromeIdentityTests {
         ]
         let engine = engine()
         try engine.run("save")
+        #expect(world.windows.allSatisfy { $0.name != nil })
 
+        // After a relaunch the windows are on hidden desktops, where their profile can't be read.
         world.relaunchChrome()
+        for index in world.windows.indices { world.windows[index].chromeProfile = .unknown }
         try engine.run("restore")
 
         #expect(world.desktop(of: 1601) == 12)
         #expect(world.desktop(of: 1602) == 13)
-        #expect(world.windows.allSatisfy { $0.name == nil })
     }
 
     @Test func saveNamesTwoSameProfileWindowsAndARelaunchStillMatchesEveryWindow() throws {
@@ -50,7 +52,7 @@ struct ChromeIdentityTests {
         let first = try #require(world.window(601)?.name)
         let second = try #require(world.window(602)?.name)
         #expect(first != second)
-        #expect(world.window(603)?.name == nil)  // the only Personal window needs no name
+        #expect(world.window(603)?.name != nil)  // every saved Chrome window is named, even the only Personal one
 
         world.relaunchChrome()
         world.move(1603, to: 13)
@@ -66,6 +68,7 @@ struct ChromeIdentityTests {
         world.windows = [.chrome(601, profile: .known("Work"), title: "Inbox", desktop: 12)]
         let engine = engine()
         try engine.run("save")
+        let first = try #require(world.window(601)?.name)
         world.openWindow(.chrome(602, profile: .known("Work"), title: "Calendar", desktop: 13))
         let handle = try #require(engine.status().windows.first { $0.title == "Calendar" }?.handle)
 
@@ -73,9 +76,9 @@ struct ChromeIdentityTests {
 
         let name = try #require(world.window(602)?.name)
         #expect(reply.contains("“\(name)”"))
-        #expect(world.window(601)?.name == nil)  // every other window and Assignment is left alone
+        #expect(world.window(601)?.name == first)  // every other window and Assignment is left alone
         let layout = try JSONDecoder().decode(Layout.self, from: Data(contentsOf: layoutURL))
-        #expect(layout.assignments.map { "\($0.window.name ?? "-") → \($0.space)" }.sorted() == ["- → Google Chrome", "\(name) → Desktop 2"])
+        #expect(layout.assignments.map { "\($0.window.name ?? "-") → \($0.space)" }.sorted() == ["\(first) → Google Chrome", "\(name) → Desktop 2"])
     }
 
     @Test func saveDropsClosedUnnamedWindowsButKeepsClosedNamedOnesUntilTheyReturn() throws {
@@ -88,12 +91,12 @@ struct ChromeIdentityTests {
         let engine = engine()
         try engine.run("save")
 
-        world.windows.removeAll { $0.id == 601 || $0.id == 602 }
+        world.windows.removeAll { $0.id == 601 || $0.id == 501 }
         try engine.run("save")
 
         let kept = try savedLayout().assignments.map(\.window)
         #expect(kept.contains { $0.name == "Research" })
-        #expect(!kept.contains { $0.chromeProfile == "Personal" })
+        #expect(!kept.contains { $0.bundleID == "com.apple.Terminal" })  // unnamed and closed: dropped
 
         world.windows.append(.chrome(701, profile: .known("Work"), title: "Inbox", desktop: 11, name: "Research"))
         try engine.run("restore")
@@ -131,7 +134,7 @@ struct ChromeIdentityTests {
         #expect(research.chromeProfile == "Work")
         #expect(research.name == "Research")
         #expect(research.assignment == "Google Chrome")  // desktop 12, named after its main app
-        #expect(windows.first { $0.title == "News" }?.assignment == "Google Chrome 2")
+        #expect(windows.first { $0.chromeProfile == "Personal" && $0.name != nil }?.assignment == "Google Chrome 2")
         #expect(windows.first { $0.title == "Mail" }?.assignment == nil)  // an extra of its kind matches nothing
     }
 
@@ -145,7 +148,8 @@ struct ChromeIdentityTests {
         try engine.run("save")
         let handles = Dictionary(uniqueKeysWithValues: engine.status().windows.map { ($0.title, $0.handle) })
 
-        try engine.run("name_window", ["window": handles["Inbox"]!, "name": "Work second"])
+        let chrome = try #require(engine.status().windows.first { $0.chromeProfile == "Work" }?.handle)  // titled by its automatic name now
+        try engine.run("name_window", ["window": chrome, "name": "Work second"])
 
         #expect(world.window(601)?.name == "Work second")
         #expect(try savedLayout().assignments.contains { $0.window.name == "Work second" && $0.space == "Google Chrome" })
@@ -164,7 +168,7 @@ struct ChromeIdentityTests {
         ]
         let engine = engine()
         try engine.run("save")
-        #expect(world.window(601)?.name == nil)
+        #expect(world.window(601)?.name != nil)
         #expect(world.window(602)?.name != nil)
 
         world.relaunchChrome()
