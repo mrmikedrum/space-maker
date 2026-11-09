@@ -90,6 +90,8 @@ public final class Engine {
                               save: request.arguments["save"] == "true")
         case "ignore":
             return ignore(handle: request.arguments["window"], app: request.arguments["app"] == "true")
+        case "remember_display":
+            return rememberDisplay(request.arguments["display"])
         case "rename_space":
             return renameSpace(request.arguments["space"], to: request.arguments["name"])
         case "name_window":
@@ -220,8 +222,8 @@ public final class Engine {
         let report = drift(displays: displays, windows: windows)
         let matches = layoutProblem == nil ? Self.match(windows, to: layout.assignments) : [:]
         return Status(
-            displaySetup: Self.knownDisplays(displays).map { Self.displayStatus($0, spaces: spaces) },
-            guestDisplays: Self.guestDisplays(displays).map { Self.displayStatus($0, spaces: [:]) },
+            displaySetup: knownDisplays(displays).map { Self.displayStatus($0, spaces: spaces) },
+            guestDisplays: guestDisplays(displays).map { Self.displayStatus($0, spaces: [:]) },
             windows: windows.map { window in
                 WindowStatus(
                     handle: handle(for: window.id),
@@ -266,14 +268,5 @@ public final class Engine {
                 DesktopStatus(number: index + 1, kind: desktop.kind, isCurrent: desktop.isCurrent, space: spaces[desktop.id])
             }
         )
-    }
-
-    /// Until Display Setups can be remembered, only the built-in display is known.
-    static func knownDisplays(_ displays: [WindowSystemDisplay]) -> [WindowSystemDisplay] {
-        displays.filter(\.isBuiltIn)
-    }
-
-    static func guestDisplays(_ displays: [WindowSystemDisplay]) -> [WindowSystemDisplay] {
-        displays.filter { !$0.isBuiltIn }
     }
 }

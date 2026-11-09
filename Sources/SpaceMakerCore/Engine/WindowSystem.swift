@@ -55,12 +55,16 @@ public enum WindowSystemEvent: Equatable, Sendable {
 public struct WindowSystemDisplay: Equatable, Sendable {
     /// Stable identity (the display UUID).
     public var id: String
+    /// Vendor, model and serial number, the fallback identity when WindowServer gives a display a new UUID.
+    /// Nil when the display reports no serial number.
+    public var hardwareID: String?
     public var name: String
     public var isBuiltIn: Bool
     public var desktops: [WindowSystemDesktop]
 
-    public init(id: String, name: String, isBuiltIn: Bool, desktops: [WindowSystemDesktop]) {
+    public init(id: String, hardwareID: String? = nil, name: String, isBuiltIn: Bool, desktops: [WindowSystemDesktop]) {
         self.id = id
+        self.hardwareID = hardwareID
         self.name = name
         self.isBuiltIn = isBuiltIn
         self.desktops = desktops

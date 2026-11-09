@@ -102,6 +102,16 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        if !status.guestDisplays.isEmpty {
+            menu.addItem(.separator())
+            for guest in status.guestDisplays {
+                let title = status.guestDisplays.count == 1 ? "Remember This Display (\(guest.name))" : "Remember \(guest.name)"
+                let item = menuItem(title, #selector(rememberDisplayClicked))
+                item.representedObject = guest.id
+                menu.addItem(item)
+            }
+        }
+
         menu.addItem(.separator())
         menu.addItem(menuItem("Run Doctor", #selector(doctorClicked)))
         menu.addItem(menuItem("Open Layout File", #selector(openLayoutClicked)))
@@ -159,6 +169,10 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func ignoreAppClicked(_ sender: NSMenuItem) {
         perform("ignore", ["window": sender.representedObject as? String ?? "", "app": "true"], failureTitle: "Space Maker couldn't Ignore that app")
+    }
+
+    @objc private func rememberDisplayClicked(_ sender: NSMenuItem) {
+        perform("remember_display", ["display": sender.representedObject as? String ?? ""], failureTitle: "Space Maker couldn't remember that display")
     }
 
     @objc private func saveAllClicked() {

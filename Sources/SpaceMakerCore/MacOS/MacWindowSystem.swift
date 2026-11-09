@@ -68,6 +68,7 @@ public final class MacWindowSystem: WindowSystem {
             }
             return WindowSystemDisplay(
                 id: displayID.flatMap(Self.uuidString) ?? display.displayIdentifier,
+                hardwareID: displayID.flatMap(Self.hardwareID),
                 name: displayID.flatMap { screens[$0]?.localizedName } ?? display.displayIdentifier,
                 isBuiltIn: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false,
                 desktops: desktops
@@ -84,6 +85,14 @@ public final class MacWindowSystem: WindowSystem {
     private static func uuidString(_ displayID: CGDirectDisplayID) -> String? {
         guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else { return nil }
         return CFUUIDCreateString(nil, uuid) as String
+    }
+
+    /// Vendor, model and serial number, the fallback identity for an external display WindowServer gives a new UUID.
+    /// Nil without a serial number, since vendor and model alone can't tell two identical monitors apart.
+    private static func hardwareID(_ displayID: CGDirectDisplayID) -> String? {
+        let serial = CGDisplaySerialNumber(displayID)
+        guard serial != 0 else { return nil }
+        return "\(CGDisplayVendorNumber(displayID)):\(CGDisplayModelNumber(displayID)):\(serial)"
     }
 
     private static func activeDisplayIDs() -> [CGDirectDisplayID] {
