@@ -91,14 +91,49 @@ public struct Assignment: Codable, Equatable, Sendable {
     }
 }
 
-/// How a window is recognised across launches. For now: its app plus its title.
+/// How a window is recognised across launches (spec, Window identity).
+///
+/// Chrome windows match on app, profile and the fullscreen flag, with their name breaking ties.
+/// Other apps match on app and the fullscreen flag, with their title breaking ties.
 public struct WindowIdentity: Codable, Hashable, Sendable {
-    public var bundleID: String
-    public var title: String
+    public static let chromeBundleID = "com.google.Chrome"
 
-    public init(bundleID: String, title: String) {
+    public var bundleID: String
+    /// Chrome only: the window's profile, nil if it couldn't be read when Saved.
+    public var chromeProfile: String?
+    public var isFullscreen: Bool
+    /// Chrome only: the window's name (Chrome's `given name`). Named Assignments outlive their window.
+    public var name: String?
+    /// Other apps only: the window's title when Saved.
+    public var title: String?
+
+    public init(bundleID: String, chromeProfile: String? = nil, isFullscreen: Bool = false, name: String? = nil, title: String? = nil) {
         self.bundleID = bundleID
+        self.chromeProfile = chromeProfile
+        self.isFullscreen = isFullscreen
+        self.name = name
         self.title = title
+    }
+
+    public var isChrome: Bool { bundleID == Self.chromeBundleID }
+
+    private enum CodingKeys: String, CodingKey {
+        case bundleID, chromeProfile, isFullscreen, name, title
+    }
+
+    /// `isFullscreen` may be left out of a hand-written Layout; it defaults to false.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bundleID = try container.decode(String.self, forKey: .bundleID)
+        chromeProfile = try container.decodeIfPresent(String.self, forKey: .chromeProfile)
+        isFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isFullscreen) ?? false
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+    }
+
+    /// Orders Assignments in the Layout file so it reads predictably.
+    var sortKey: [String] {
+        [bundleID, chromeProfile ?? "", isFullscreen ? "1" : "0", name ?? "", title ?? ""]
     }
 }
 

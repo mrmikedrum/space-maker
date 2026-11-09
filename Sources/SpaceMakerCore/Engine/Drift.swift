@@ -73,7 +73,7 @@ extension Engine {
                 hint: "Arrange the windows and desktops the way you want them here, then Save."
             )])
         }
-        let spaceOf = Dictionary(layout.assignments.map { ($0.window, $0.space) }, uniquingKeysWith: { first, _ in first })
+        let matches = Self.match(windows, to: layout.assignments)
         var drift: [DriftStatus] = []
         var softDrift: [SoftDriftStatus] = []
 
@@ -89,7 +89,7 @@ extension Engine {
         }
 
         for window in windows where !window.isFullscreen && !isIgnored(window) {
-            let space = spaceOf[Self.identity(of: window)]
+            let space = matches[window.id].map { layout.assignments[$0].space }
             if let space {
                 guard let target = desktops[space], window.desktopID != nil, window.desktopID != target else { continue }
                 if failedMoves.contains(window.id) {

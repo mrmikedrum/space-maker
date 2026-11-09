@@ -8,12 +8,30 @@ import Foundation
 /// Not unit tested; the Doctor is its test suite (spec, Testing Decisions).
 @MainActor
 public final class MacWindowSystem: WindowSystem {
-    public static let chromeBundleID = "com.google.Chrome"
+    public static let chromeBundleID = WindowIdentity.chromeBundleID
 
     private let skyLight: SkyLight
     public var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
     var mirrors: [UInt32: PinMirror] = [:]
     private var activeSpaceObserver: NSObjectProtocol?
+
+    /// Where each Chrome window's profile came from on the last read, for the Doctor.
+    public enum ChromeProfileSource: Sendable {
+        /// Read from the window's avatar button just now.
+        case read
+        /// Accessibility can't reach the window (it's on a hidden desktop); remembered from an earlier read.
+        case remembered
+        /// Accessibility can't reach the window and it hasn't been seen on a visible desktop yet.
+        case unreachable
+        /// Accessibility reached the window but no profile name was found on it.
+        case unreadable
+    }
+
+    public private(set) var chromeProfileSources: [UInt32: ChromeProfileSource] = [:]
+    /// Profiles read earlier, so a window keeps its profile after moving to a hidden desktop. Window IDs live as long as their window.
+    private var rememberedProfiles: [UInt32: String] = [:]
+    /// Chrome windows' bounds and titles on the last read, to find them again through AppleScript.
+    private var chromeWindowFrames: [UInt32: (title: String, bounds: CGRect)] = [:]
 
     public init(skyLight: SkyLight) {
         self.skyLight = skyLight
@@ -92,6 +110,9 @@ public final class MacWindowSystem: WindowSystem {
 
         var accessibilityByPID: [pid_t: [UInt32: AccessibilityWindow]] = [:]
         var windows: [WindowSystemWindow] = []
+        var chromeScriptWindows: [ChromeScripting.ScriptWindow]?
+        var profileSources: [UInt32: ChromeProfileSource] = [:]
+        var chromeFrames: [UInt32: (title: String, bounds: CGRect)] = [:]
         for info in infos {
             guard (info[kCGWindowLayer as String] as? Int) == 0,
                   let number = info[kCGWindowNumber as String] as? NSNumber,
@@ -106,20 +127,48 @@ public final class MacWindowSystem: WindowSystem {
             if accessibilityByPID[pid] == nil { accessibilityByPID[pid] = Self.accessibilityWindows(pid: pid) }
             let accessibility = accessibilityByPID[pid]?[windowID]
             let desktopID = desktops.count == 1 ? desktops[0] : nil
+            let title = (info[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? accessibility?.title ?? ""
+
+            var profile = ChromeProfile.notChrome
+            var name: String?
+            if bundleID == Self.chromeBundleID {
+                (profile, profileSources[windowID]) = chromeProfile(windowID, accessibility: accessibility)
+                let bounds = (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
+                chromeFrames[windowID] = (title, bounds)
+                if chromeScriptWindows == nil { chromeScriptWindows = ChromeScripting.windows() ?? [] }
+                name = chromeScriptWindows?.first { $0.title == title && $0.bounds == bounds }?.givenName
+            }
 
             windows.append(WindowSystemWindow(
                 id: windowID,
                 bundleID: bundleID,
                 appName: app.localizedName ?? bundleID,
-                title: (info[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? accessibility?.title ?? "",
+                title: title,
                 desktopID: desktopID,
                 isFullscreen: desktopID.map { desktopKinds[$0] == .fullscreen } ?? false,
-                chromeProfile: bundleID == Self.chromeBundleID ? (accessibility.flatMap { ChromeProfileReader.profile(of: $0.element) } ?? .unknown) : .notChrome,
+                chromeProfile: profile,
                 // Accessibility only reaches windows on visible desktops; assume the rest are standard.
-                isStandard: accessibility.map { $0.subrole == kAXStandardWindowSubrole as String } ?? true
+                isStandard: accessibility.map { $0.subrole == kAXStandardWindowSubrole as String } ?? true,
+                name: name
             ))
         }
+        chromeProfileSources = profileSources
+        chromeWindowFrames = chromeFrames
+        rememberedProfiles = rememberedProfiles.filter { profileSources[$0.key] != nil }
         return windows
+    }
+
+    /// Reads a Chrome window's profile through Accessibility, or remembers it from when the window was last visible.
+    private func chromeProfile(_ windowID: UInt32, accessibility: AccessibilityWindow?) -> (ChromeProfile, ChromeProfileSource) {
+        if let accessibility {
+            if case .known(let profile)? = ChromeProfileReader.profile(of: accessibility.element) {
+                rememberedProfiles[windowID] = profile
+                return (.known(profile), .read)
+            }
+            return (rememberedProfiles[windowID].map(ChromeProfile.known) ?? .unknown, .unreadable)
+        }
+        if let profile = rememberedProfiles[windowID] { return (.known(profile), .remembered) }
+        return (.unknown, .unreachable)
     }
 
     // MARK: - Actions
@@ -136,6 +185,23 @@ public final class MacWindowSystem: WindowSystem {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         } while Date() < deadline
         return false
+    }
+
+    /// Finds the window through Chrome's AppleScript by its title and bounds, since AppleScript window IDs aren't WindowServer IDs.
+    public func setChromeWindowName(_ windowID: UInt32, to name: String) -> WindowNamingResult {
+        guard let frame = chromeWindowFrames[windowID] else { return .failed("Space Maker hasn't seen that Chrome window.") }
+        return ChromeScripting.setName(name, ofWindowTitled: frame.title, bounds: frame.bounds)
+    }
+
+    /// Whether Space Maker may automate Chrome, for the Doctor. Never prompts.
+    public static func chromeAutomationStatus() -> (granted: Bool?, summary: String) {
+        switch ChromeScripting.permission(ask: false) {
+        case .granted: (true, "Space Maker may name Chrome windows.")
+        case .denied: (false, ChromeScripting.deniedReason)
+        case .notAsked: (nil, "Not asked yet; Save asks the first time it needs to name a Chrome window.")
+        case .chromeNotRunning: (nil, "Google Chrome isn't running.")
+        case .other(let status): (false, "macOS couldn't check Automation permission for Google Chrome (error \(status)).")
+        }
     }
 
     private struct AccessibilityWindow {
@@ -161,7 +227,7 @@ public final class MacWindowSystem: WindowSystem {
         var notes: [String] = []
         if !AXIsProcessTrusted() { notes.append("Accessibility isn't granted, so no Chrome window can be inspected.") }
         if !PrivateAccessibility.canMapWindows { notes.append("`\(PrivateAccessibility.windowIDSymbol)` is missing, so Accessibility windows can't be matched to window IDs.") }
-        notes.append("Accessibility only reaches windows on desktops currently visible; Chrome windows on other desktops report an unknown profile.")
+        notes.append("Accessibility only reaches windows on desktops currently visible. A Chrome window on another desktop keeps the profile last read while it was visible; one never seen on a visible desktop reports an unknown profile.")
         return notes
     }
 }

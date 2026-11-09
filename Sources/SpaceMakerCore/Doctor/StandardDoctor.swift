@@ -26,6 +26,7 @@ public enum StandardDoctor {
                 DoctorCheck(title: "Display and desktop enumeration") { enumeration(skyLight) },
                 DoctorCheck(title: "Chrome profiles") { chromeProfiles(windowSystem) },
                 DoctorCheck(title: screenCaptureTitle) { ScreenCaptureCheck.run() },
+                DoctorCheck(title: "Chrome Automation") { chromeAutomation() },
                 DoctorCheck(title: liveMoveTitle) { LiveMoveTest(skyLight: skyLight, helperExecutable: helperExecutable).run() },
             ],
             verdict: verdict
@@ -130,28 +131,55 @@ public enum StandardDoctor {
         )
     }
 
+    /// Fails only when Accessibility reached a Chrome window and still found no profile, which means Chrome changed.
+    /// A window on a hidden desktop that hasn't been seen yet is a finding, not a failure: Save names it, and it's matched by name.
     static func chromeProfiles(_ windowSystem: MacWindowSystem) -> CheckOutcome {
         let chrome = windowSystem.readWindows().filter { $0.bundleID == MacWindowSystem.chromeBundleID && $0.isStandard }
         guard !chrome.isEmpty else {
             return CheckOutcome(.skipped(reason: "Chrome has no windows open."), summary: "No Chrome windows to read.")
         }
+        let sources = windowSystem.chromeProfileSources
         var details = chrome.map { window in
-            let profile = switch window.chromeProfile {
-            case .known(let name): name
-            case .unknown, .notChrome: "UNKNOWN"
+            let profile = if case .known(let name) = window.chromeProfile { name } else { "UNKNOWN" }
+            let source = switch sources[window.id] {
+            case .read: "read now"
+            case .remembered: "remembered; on a hidden desktop"
+            case .unreachable: "on a hidden desktop, not seen yet"
+            case .unreadable: "Accessibility reached the window but found no profile name"
+            case nil: "not inspected"
             }
-            return "Window \(window.id) \"\(window.title)\": profile \(profile)"
+            return "Window \(window.id) \"\(window.title)\": profile \(profile) (\(source))"
         }
-        let unknown = chrome.filter { $0.chromeProfile == .unknown }.count
-        guard unknown == 0 else {
+        let unreadable = chrome.filter { sources[$0.id] == .unreadable }.count
+        let unreachable = chrome.filter { $0.chromeProfile == .unknown && sources[$0.id] != .unreadable }.count
+        if unreadable > 0 {
             details += MacWindowSystem.chromeProfileLimitations.map { "Possible reason: \($0)" }
             return CheckOutcome(
-                .fail(suspectedCause: "Space Maker reads a Chrome window's profile from its toolbar avatar button through Accessibility, matching it against the profile names in Chrome's `Local State`. Either Accessibility can't reach the window (not granted, or the window is on a desktop that isn't visible) or Chrome changed the avatar button's accessible text. Status reports these windows' profile as unknown."),
-                summary: "\(unknown) of \(chrome.count) Chrome window(s) have an unknown profile.",
+                .fail(suspectedCause: "Space Maker reads a Chrome window's profile from its toolbar avatar button through Accessibility, matching it against the profile names in Chrome's `Local State`. Accessibility reached these windows but found no profile name, so Chrome probably changed the avatar button's accessible text or the profile names moved. Look at `ChromeProfileReader` in `SpaceMakerCore/MacOS/MacWindowSystem.swift`."),
+                summary: "\(unreadable) of \(chrome.count) visible Chrome window(s) show no readable profile.",
                 details: details
             )
         }
-        return CheckOutcome(.pass, summary: "Read the profile of all \(chrome.count) Chrome window(s).", details: details)
+        let summary = unreachable == 0
+            ? "Know the profile of all \(chrome.count) Chrome window(s)."
+            : "Know the profile of \(chrome.count - unreachable) of \(chrome.count) Chrome window(s). The other \(unreachable) are on hidden desktops Accessibility can't reach until they're shown; Save names them so they're matched by name instead."
+        return CheckOutcome(.pass, summary: summary, details: details)
+    }
+
+    /// Save names look-alike Chrome windows through AppleScript, which needs Automation permission for Chrome.
+    static func chromeAutomation() -> CheckOutcome {
+        let status = MacWindowSystem.chromeAutomationStatus()
+        switch status.granted {
+        case true?:
+            return CheckOutcome(.pass, summary: status.summary)
+        case false?:
+            return CheckOutcome(
+                .fail(suspectedCause: "Without Automation permission, Save can't name Chrome windows that share a profile and fullscreen state, so they may be mixed up after Chrome relaunches. Save itself still works."),
+                summary: status.summary
+            )
+        case nil:
+            return CheckOutcome(.skipped(reason: status.summary), summary: "Not checked.")
+        }
     }
 
     // MARK: - Helpers

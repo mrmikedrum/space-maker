@@ -81,6 +81,8 @@ public final class Engine {
             return rememberDisplay(request.arguments["display"])
         case "rename_space":
             return renameSpace(request.arguments["space"], to: request.arguments["name"])
+        case "name_window":
+            return nameWindow(handle: request.arguments["window"], name: request.arguments["name"])
         case "pin":
             return pin(request.arguments["window"])
         case "unpin":
@@ -201,6 +203,7 @@ public final class Engine {
         handles = handles.filter { id, _ in windows.contains { $0.id == id } }
         ignoredWindows = ignoredWindows.filter { id in windows.contains { $0.id == id } }
         let report = drift(displays: displays, windows: windows)
+        let matches = layoutProblem == nil ? Self.match(windows, to: layout.assignments) : [:]
         return Status(
             displaySetup: knownDisplays(displays).map { Self.displayStatus($0, spaces: spaces) },
             guestDisplays: guestDisplays(displays).map { Self.displayStatus($0, spaces: [:]) },
@@ -212,7 +215,9 @@ public final class Engine {
                     chromeProfile: Self.profileText(window.chromeProfile),
                     isFullscreen: window.isFullscreen,
                     title: window.title,
-                    desktop: window.desktopID.flatMap { desktops[$0] }
+                    name: window.name,
+                    desktop: window.desktopID.flatMap { desktops[$0] },
+                    assignment: matches[window.id].map { layout.assignments[$0].space }
                 )
             },
             pins: pins.compactMap { handles[$0] },

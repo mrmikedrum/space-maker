@@ -18,6 +18,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Space Maker names Chrome windows that look alike, so each keeps its place after Chrome relaunches.</string>
     <key>LSUIElement</key>
     <true/>
 </dict>

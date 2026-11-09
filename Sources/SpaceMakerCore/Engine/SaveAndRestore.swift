@@ -71,13 +71,11 @@ extension Engine {
         withLayout {
             let displays = knownDisplays(windowSystem.readDisplays())
             let standard = windowSystem.readWindows().filter(\.isStandard)
-            let windows = standard.filter { !isIgnored($0) }  // Ignored windows keep whatever Assignment they had
+            var windows = standard.filter { !isIgnored($0) }  // Ignored windows keep whatever Assignment they had
             let setupKey = displays.map(\.id).sorted()
             let previous = layout.displaySetups.first { $0.displays == setupKey }
 
-            let currentSpace = Dictionary(
-                layout.assignments.map { ($0.window, $0.space) }, uniquingKeysWith: { first, _ in first }
-            )
+            let matches = Self.match(standard, to: layout.assignments)
             var taken = Set<String>()
             var arrangement: [DisplayArrangement] = []
             var newSpaces: [String] = []
@@ -92,7 +90,7 @@ extension Engine {
                 // Which Spaces the windows now on each desktop were assigned to.
                 let votes = desktops.map { desktop in
                     windows.filter { $0.desktopID == desktop.id && !$0.isFullscreen }
-                        .compactMap { currentSpace[Self.identity(of: $0)] }
+                        .compactMap { matches[$0.id].map { layout.assignments[$0].space } }
                 }
                 // 1. A desktop holding windows of its positional Space keeps it; otherwise the Space most of its windows belong to.
                 for index in desktops.indices {
@@ -134,24 +132,37 @@ extension Engine {
             let arranged = layout.displaySetups.flatMap { $0.arrangement.flatMap(\.spaces) }
             layout.spaces = layout.spaces.filter(arranged.contains) + arranged.filter { !layout.spaces.contains($0) }.uniqued()
 
-            // Every window on a Space gets an Assignment; Assignments of windows that are gone are dropped.
-            var assignments: [WindowIdentity: String] = [:]
-            let live = Set(standard.map(Self.identity(of:)))
-            for assignment in layout.assignments where live.contains(assignment.window) && layout.spaces.contains(assignment.space) {
-                assignments[assignment.window] = assignment.space
-            }
+            let saving = Set(windows.filter { !$0.isFullscreen && $0.desktopID.flatMap { namesByDesktop[$0] } != nil }.map(\.id))
+            let namingNotes = autoNameAmbiguousChromeWindows(&windows, saving: saving)
+
+            // Every window on a Space gets an Assignment. A live window's old Assignment is kept only if it isn't on a
+            // Space now; a closed window's is kept only if it's named.
+            var assignments: [Assignment] = []
             var saved = 0
+            var resaved = Set<Int>()
             for window in windows where !window.isFullscreen {
                 guard let space = window.desktopID.flatMap({ namesByDesktop[$0] }) else { continue }
-                assignments[Self.identity(of: window)] = space
+                var identity = Self.identity(of: window)
+                if let old = matches[window.id] {
+                    resaved.insert(old)
+                    // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
+                    if identity.isChrome, identity.chromeProfile == nil {
+                        identity.chromeProfile = layout.assignments[old].window.chromeProfile
+                    }
+                }
+                assignments.append(Assignment(window: identity, space: space))
                 saved += 1
             }
-            layout.assignments = assignments
-                .map { Assignment(window: $0.key, space: $0.value) }
-                .sorted { ($0.window.bundleID, $0.window.title) < ($1.window.bundleID, $1.window.title) }
+            let live = Set(matches.values)
+            for (index, assignment) in layout.assignments.enumerated() where !resaved.contains(index) {
+                guard layout.spaces.contains(assignment.space), live.contains(index) || assignment.window.name != nil else { continue }
+                assignments.append(assignment)
+            }
+            layout.assignments = assignments.sorted { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
 
             var summary = "Saved \(saved) window\(saved == 1 ? "" : "s") on \(arranged.count) Space\(arranged.count == 1 ? "" : "s"): \(arranged.joined(separator: ", "))."
             if !newSpaces.isEmpty { summary += " New: \(newSpaces.joined(separator: ", "))." }
+            summary += namingNotes.map { "\n\($0)" }.joined()
             return committing(summary)
         }
     }
@@ -175,11 +186,17 @@ extension Engine {
         }
     }
 
+    /// Replaces the window's Assignment, if it has one, with one for `space`.
     func assign(_ window: WindowSystemWindow, to space: String) {
-        let identity = Self.identity(of: window)
-        layout.assignments.removeAll { $0.window == identity }
+        var identity = Self.identity(of: window)
+        let windows = windowSystem.readWindows().filter(\.isStandard)
+        if let old = Self.match(windows, to: layout.assignments)[window.id] {
+            // A profile that can't be read now (the window is on a hidden desktop) is remembered from before.
+            if identity.isChrome, identity.chromeProfile == nil { identity.chromeProfile = layout.assignments[old].window.chromeProfile }
+            layout.assignments.remove(at: old)
+        }
         layout.assignments.append(Assignment(window: identity, space: space))
-        layout.assignments.sort { ($0.window.bundleID, $0.window.title) < ($1.window.bundleID, $1.window.title) }
+        layout.assignments.sort { $0.window.sortKey.lexicographicallyPrecedes($1.window.sortKey) }
     }
 
     // MARK: - Restore
@@ -191,14 +208,15 @@ extension Engine {
             let displays = windowSystem.readDisplays()
             guard let desktops = resolvedSpaces(displays) else { return Self.unknownDisplaySetupReply }
             let windows = windowSystem.readWindows().filter(\.isStandard)
-            let spaceOf = Dictionary(layout.assignments.map { ($0.window, $0.space) }, uniquingKeysWith: { first, _ in first })
+            let matches = Self.match(windows, to: layout.assignments)
+            let spaceOf = { (window: WindowSystemWindow) in matches[window.id].map { self.layout.assignments[$0].space } }
             forgetSoftDriftIfWorldChanged(displays: displays, windows: windows)
             defer { rememberWorldForSoftDrift() }
 
             var targets = windows.filter { !$0.isFullscreen && !isIgnored($0) }
             if let handle {
                 guard let window = window(withHandle: handle, in: windows) else { return Self.unknownHandleReply(handle) }
-                guard spaceOf[Self.identity(of: window)] != nil else {
+                guard spaceOf(window) != nil else {
                     return CommandReply(text: "\(handle) has no Assignment, so Space Maker leaves it where it is. Save first, or use move_window with save.", isError: true)
                 }
                 targets = [window]
@@ -208,7 +226,7 @@ extension Engine {
             var problems: [String] = []
             var notRetried: [String] = []
             for window in targets {
-                guard let space = spaceOf[Self.identity(of: window)] else { continue }  // no Assignment: never moved
+                guard let space = spaceOf(window) else { continue }  // no Assignment: never moved
                 let label = "\(self.handle(for: window.id)) (\(window.appName) “\(window.title)”)"
                 guard let target = desktops[space] else {
                     problems.append("\(label): Space “\(space)” has no desktop in this Display Setup.")
@@ -249,7 +267,8 @@ extension Engine {
             }
             let displays = windowSystem.readDisplays()
             guard let desktops = resolvedSpaces(displays) else { return Self.unknownDisplaySetupReply }
-            guard let window = window(withHandle: handle, in: windowSystem.readWindows().filter(\.isStandard)) else {
+            let windows = windowSystem.readWindows().filter(\.isStandard)
+            guard let window = window(withHandle: handle, in: windows) else {
                 return Self.unknownHandleReply(handle)
             }
             guard let target = desktops[space] else {
@@ -329,10 +348,6 @@ extension Engine {
 
     static func unknownHandleReply(_ handle: String) -> CommandReply {
         CommandReply(text: "No window has the handle “\(handle)”. Handles come from status.", isError: true)
-    }
-
-    static func identity(of window: WindowSystemWindow) -> WindowIdentity {
-        WindowIdentity(bundleID: window.bundleID, title: window.title)
     }
 
     /// The app with the most windows; the first such window's app on a tie.
