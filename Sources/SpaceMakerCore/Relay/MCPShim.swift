@@ -29,7 +29,7 @@ public struct MCPShim: Sendable {
     public static let notRunning = "Space Maker isn't running."
 
     public static let tools = [
-        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title, name, current desktop and Assignment (the Space it belongs on), which Space each desktop holds, and the handles of pinned windows. The Display Setup is the built-in display plus every connected remembered display; any other display is a Guest Display, which Space Maker never puts anything on. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
+        Tool(name: "status", description: "Report the displays, their desktops in Mission Control order (regular and fullscreen), and every window with its handle, app, Chrome profile, fullscreen flag, title, name, current desktop and Assignment (the Space it belongs on), which Space each desktop holds, and the handles of pinned windows, and whether automatic behaviour is paused. The Display Setup is the built-in display plus every connected remembered display; any other display is a Guest Display, which Space Maker never puts anything on. Also lists Drift (windows away from their Assignment, and new windows that match no Assignment) and Soft Drift (what Space Maker can't fix itself, with a hint). Ignored windows and apps never count as Drift."),
         Tool(name: "save", description: "Save: record which Space every window is on, and the order of Spaces on each display, into the Layout. A desktop Space Maker hasn't seen before becomes a new Space named after its main app. Give a window handle to save just that window's Assignment as the Space it's on now.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\". Omit to save everything.", isRequired: false),
         ]),
@@ -62,6 +62,8 @@ public struct MCPShim: Sendable {
         Tool(name: "unpin", description: "Remove a window's Pin.", parameters: [
             Parameter(name: "window", kind: .string, description: "A window handle from status, such as \"w3\".", isRequired: true),
         ]),
+        Tool(name: "pause", description: "Pause automatic behaviour: windows that appear (such as after Chrome relaunches) stay where they are instead of going to their Space, and display changes don't trigger a Restore. Commands still work. status reports isPaused."),
+        Tool(name: "resume", description: "Resume automatic behaviour after pause. Windows that appeared, and display changes that happened, while paused stay as they are until restored."),
         Tool(name: "doctor", description: "Run Space Maker's Doctor, a self-check of the macOS internals it relies on, and return its markdown report."),
     ]
 

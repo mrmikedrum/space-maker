@@ -128,15 +128,94 @@ public struct ArrangedFullscreenWindow: Codable, Equatable, Sendable {
     }
 }
 
-/// Where a specific window belongs.
+/// Where a specific window belongs: its Space, and its position in each Display Setup where one was saved.
 public struct Assignment: Codable, Equatable, Sendable {
     public var window: WindowIdentity
     /// The Space the window belongs on; for a fullscreen window, the name of its place in the Arrangement.
     public var space: String
+    /// The window's saved position, one per Display Setup at most.
+    public var frames: [SavedFrame]
 
-    public init(window: WindowIdentity, space: String) {
+    public init(window: WindowIdentity, space: String, frames: [SavedFrame] = []) {
         self.window = window
         self.space = space
+        self.frames = frames
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case window, space, frames
+    }
+
+    /// `frames` may be missing from a Layout written before positions were saved, or trimmed by hand.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        window = try container.decode(WindowIdentity.self, forKey: .window)
+        space = try container.decode(String.self, forKey: .space)
+        frames = try container.decodeIfPresent([SavedFrame].self, forKey: .frames) ?? []
+    }
+
+    /// Leaves `frames` out when there are none, so the file stays short.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(window, forKey: .window)
+        try container.encode(space, forKey: .space)
+        if !frames.isEmpty { try container.encode(frames, forKey: .frames) }
+    }
+
+    /// The saved position for the Display Setup with this key, if one was saved.
+    public func frame(in displaySetup: [String]) -> RelativeFrame? {
+        frames.first { $0.displaySetup == displaySetup }?.frame
+    }
+
+    /// Records the position for one Display Setup, leaving the others alone.
+    mutating func setFrame(_ frame: RelativeFrame, in displaySetup: [String]) {
+        frames.removeAll { $0.displaySetup == displaySetup }
+        frames.append(SavedFrame(displaySetup: displaySetup, frame: frame))
+        frames.sort { $0.displaySetup.lexicographicallyPrecedes($1.displaySetup) }
+    }
+}
+
+/// A window's position in one Display Setup.
+public struct SavedFrame: Codable, Equatable, Sendable {
+    /// The Display Setup's key: its known displays' IDs, sorted.
+    public var displaySetup: [String]
+    public var frame: RelativeFrame
+
+    public init(displaySetup: [String], frame: RelativeFrame) {
+        self.displaySetup = displaySetup
+        self.frame = frame
+    }
+}
+
+/// A window's position and size as fractions of its display's visible frame, so it survives a resolution change.
+public struct RelativeFrame: Codable, Equatable, Sendable {
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+
+    /// `frame` relative to `display`, or nil if the display's visible frame is unknown.
+    init?(_ frame: WindowFrame, on display: WindowFrame) {
+        guard display.width > 0, display.height > 0 else { return nil }
+        self.init(
+            x: (frame.x - display.x) / display.width, y: (frame.y - display.y) / display.height,
+            width: frame.width / display.width, height: frame.height / display.height
+        )
+    }
+
+    /// The frame in screen points on `display`, rounded to whole points.
+    func absolute(on display: WindowFrame) -> WindowFrame {
+        WindowFrame(
+            x: (display.x + x * display.width).rounded(), y: (display.y + y * display.height).rounded(),
+            width: (width * display.width).rounded(), height: (height * display.height).rounded()
+        )
     }
 }
 

@@ -14,6 +14,8 @@ public final class MacWindowSystem: WindowSystem {
     public var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
     var mirrors: [UInt32: PinMirror] = [:]
     private var activeSpaceObserver: NSObjectProtocol?
+    private var screenParametersObserver: NSObjectProtocol?
+    private var appearanceObserver: WindowAppearanceObserver?
 
     /// Where each Chrome window's profile came from on the last read, for the Doctor.
     public enum ChromeProfileSource: Sendable {
@@ -39,6 +41,23 @@ public final class MacWindowSystem: WindowSystem {
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.onEvent?(.activeSpaceChanged) }
+        }
+        appearanceObserver = WindowAppearanceObserver { [weak self] windowID in
+            self?.onEvent?(.windowAppeared(windowID))
+        }
+        // Posted for every connect, disconnect and rearrangement, often several times per change.
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.onEvent?(.displaysReconfigured) }
+        }
+    }
+
+    // MARK: - Clock
+
+    public func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            MainActor.assumeIsolated { action() }
         }
     }
 
@@ -67,9 +86,17 @@ public final class MacWindowSystem: WindowSystem {
                 hardwareID: displayID.flatMap(Self.hardwareID),
                 name: displayID.flatMap { screens[$0]?.localizedName } ?? display.displayIdentifier,
                 isBuiltIn: displayID.map { CGDisplayIsBuiltin($0) != 0 } ?? false,
-                desktops: desktops
+                desktops: desktops,
+                visibleFrame: displayID.flatMap { screens[$0] }.map(Self.visibleFrame) ?? .zero
             )
         }
+    }
+
+    /// The screen's visible frame, flipped from AppKit's bottom-left origin to the top-left origin windows use.
+    private static func visibleFrame(of screen: NSScreen) -> WindowFrame {
+        let mainHeight = NSScreen.screens.first?.frame.height ?? 0
+        let frame = screen.visibleFrame
+        return WindowFrame(x: frame.minX, y: mainHeight - frame.maxY, width: frame.width, height: frame.height)
     }
 
     /// SkyLight names displays by UUID, except that the main display may appear as the literal "Main".
@@ -129,11 +156,12 @@ public final class MacWindowSystem: WindowSystem {
             let desktopID = desktops.count == 1 ? desktops[0] : nil
             let title = (info[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? accessibility?.title ?? ""
 
+            let bounds = (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
             var profile = ChromeProfile.notChrome
             var name: String?
             if bundleID == Self.chromeBundleID {
                 (profile, profileSources[windowID]) = chromeProfile(windowID, accessibility: accessibility)
-                let bounds = (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } ?? .zero
+                let bounds = bounds ?? .zero
                 chromeFrames[windowID] = (title, bounds)
                 if chromeScriptWindows == nil { chromeScriptWindows = ChromeScripting.windows() ?? [] }
                 name = chromeScriptWindows?.first { $0.title == title && $0.bounds == bounds }?.givenName
@@ -149,7 +177,8 @@ public final class MacWindowSystem: WindowSystem {
                 chromeProfile: profile,
                 // Accessibility only reaches windows on visible desktops; assume the rest are standard.
                 isStandard: accessibility.map { $0.subrole == kAXStandardWindowSubrole as String } ?? true,
-                name: name
+                name: name,
+                frame: bounds.map { WindowFrame(x: $0.minX, y: $0.minY, width: $0.width, height: $0.height) }
             ))
         }
         chromeProfileSources = profileSources
@@ -342,6 +371,21 @@ extension MacWindowSystem {
         if let element = Self.accessibilityWindows(pid: pid)[windowID]?.element {
             AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         }
+    }
+
+    /// Sets the frame through Accessibility, which only reaches windows on desktops currently showing.
+    public func setFrame(_ windowID: UInt32, to frame: WindowFrame) -> Bool {
+        guard let pid = (Self.windowInfo(windowID)?[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+              let element = Self.accessibilityWindows(pid: pid)[windowID]?.element
+        else { return false }
+        var origin = CGPoint(x: frame.x, y: frame.y)
+        var size = CGSize(width: frame.width, height: frame.height)
+        guard let position = AXValueCreate(.cgPoint, &origin), let extent = AXValueCreate(.cgSize, &size) else { return false }
+        // Size, position, then size again: a window moving to a smaller display may be clamped by its old position.
+        AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, extent)
+        let moved = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, position)
+        let sized = AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, extent)
+        return moved == .success && sized == .success
     }
 
     public func showPinMirror(of windowID: UInt32) {

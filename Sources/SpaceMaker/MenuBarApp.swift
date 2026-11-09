@@ -12,7 +12,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var server: CommandServer?
     private var layoutWatcher: LayoutWatcher?
     private var doctorFailed = false
-    /// Until the port delivers window events, Drift is checked on a timer.
+    /// The port has no event for a window the user moves, so Drift is also checked on a timer.
     private var driftTimer: Timer?
 
     static func makeDoctor(skyLight: SkyLight, windowSystem: MacWindowSystem? = nil) -> Doctor {
@@ -42,6 +42,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.engine.layoutFileChanged()
             self?.refreshIcon()
         }
+        engine.onChange = { [weak self] in self?.refreshIcon() }
         registerLoginItem()
         installStatusItem()
         driftTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -79,6 +80,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(menuItem("Save All", #selector(saveAllClicked)))
         menu.addItem(menuItem("Restore All", #selector(restoreAllClicked)))
         menu.addItem(menuItem("Pin or Unpin Frontmost Window", #selector(pinFrontmostClicked)))
+        menu.addItem(menuItem(status.isPaused ? "Resume Automatic Placement and Restore" : "Pause Automatic Placement and Restore", #selector(pauseClicked)))
 
         if !status.drift.isEmpty {
             menu.addItem(.separator())
@@ -128,10 +130,11 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let label = switch drift.kind {
         case .new: "New: \(drift.app) “\(drift.title)”"
         case .moved: "Moved: \(drift.app) “\(drift.title)” (belongs on \(drift.space ?? "?"))"
+        case .position: "Out of place: \(drift.app) “\(drift.title)” (away from its saved position)"
         }
         let item = NSMenuItem(title: label, action: nil, keyEquivalent: "")
         let actions = NSMenu()
-        if drift.kind == .moved {
+        if drift.kind != .new {
             actions.addItem(windowItem("Restore", #selector(restoreWindowClicked), drift.handle))
         }
         actions.addItem(windowItem("Save Where It Is", #selector(saveWindowClicked), drift.handle))
@@ -191,6 +194,10 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.informativeText = reply.text
         NSApp.activate()
         alert.runModal()
+    }
+
+    @objc private func pauseClicked() {
+        perform(engine.isPaused ? "resume" : "pause", failureTitle: "Couldn't pause or resume")
     }
 
     @objc private func pinFrontmostClicked() {
@@ -283,6 +290,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.title = ""
             button.toolTip = "Space Maker"
         }
+        if engine.isPaused { button.toolTip = (button.toolTip ?? "Space Maker") + " (automatic placement and restore paused)" }
     }
 
     // MARK: - Login item

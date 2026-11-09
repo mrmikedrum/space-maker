@@ -7,6 +7,8 @@ public struct DriftStatus: Codable, Equatable, Sendable {
         case moved
         /// The window matches no Assignment.
         case new
+        /// The window is on its Space but away from its saved position for this Display Setup.
+        case position
     }
 
     public var kind: Kind
@@ -50,6 +52,7 @@ struct WorldSnapshot: Equatable {
         var window: UInt32
         var desktop: UInt64?
         var isFullscreen: Bool
+        var frame: WindowFrame?
     }
 
     var displays: [WindowSystemDisplay]
@@ -57,7 +60,7 @@ struct WorldSnapshot: Equatable {
 
     init(displays: [WindowSystemDisplay], windows: [WindowSystemWindow]) {
         self.displays = displays
-        places = windows.map { Place(window: $0.id, desktop: $0.desktopID, isFullscreen: $0.isFullscreen) }
+        places = windows.map { Place(window: $0.id, desktop: $0.desktopID, isFullscreen: $0.isFullscreen, frame: $0.frame) }
     }
 }
 
@@ -74,6 +77,7 @@ extension Engine {
             )])
         }
         let matches = Self.match(windows, to: layout.assignments)
+        let known = knownDisplays(displays)
         var drift: [DriftStatus] = []
         var softDrift: [SoftDriftStatus] = []
 
@@ -90,27 +94,38 @@ extension Engine {
 
         let places = fullscreenPlaces(displays)
         for window in windows where !isIgnored(window) {
-            let space = matches[window.id].map { layout.assignments[$0].space }
-            if let index = matches[window.id], layout.assignments[index].window.isFullscreen {
-                guard let place = places[layout.assignments[index].space] else { continue }
+            let assignment = matches[window.id].map { layout.assignments[$0] }
+            if let assignment, assignment.window.isFullscreen {
+                guard let place = places[assignment.space] else { continue }
                 let (moved, soft) = fullscreenDrift(window, place: place, matches: matches, windows: windows)
                 drift += moved.map { [$0] } ?? []
                 softDrift += soft.map { [$0] } ?? []
                 continue
             }
-            if let space {
-                guard let target = desktops[space], window.desktopID != nil, window.desktopID != target else { continue }
-                if failedMoves.contains(window.id) {
+            let space = assignment?.space
+            var kind = DriftStatus.Kind.new
+            if let assignment, let space {
+                guard let target = desktops[space], window.desktopID != nil else { continue }
+                if window.desktopID == target {
+                    // On its Space: Drift only if a position was saved for this Display Setup and the window is away from it.
+                    guard let frame = savedFrame(of: assignment, on: target, displays: known), !Self.isAt(window.frame, frame) else { continue }
+                    kind = .position
+                } else {
+                    kind = .moved
+                }
+                if failedMoves.contains(window.id) || failedFrames.contains(window.id) {
                     softDrift.append(SoftDriftStatus(
                         handle: handle(for: window.id), app: window.appName, title: window.title,
-                        problem: "macOS wouldn't move it to “\(space)”.",
-                        hint: "Move it there by hand, or Save to keep it where it is. Space Maker tries again when windows or desktops change."
+                        problem: kind == .moved ? "macOS wouldn't move it to “\(space)”." : "macOS wouldn't put it back at its saved position.",
+                        hint: kind == .moved
+                            ? "Move it there by hand, or Save to keep it where it is. Space Maker tries again when windows or desktops change."
+                            : "Switch to “\(space)” and Restore, or Save to keep it as it is. Space Maker tries again when windows or desktops change."
                     ))
                     continue
                 }
             }
             drift.append(DriftStatus(
-                kind: space == nil ? .new : .moved, handle: handle(for: window.id),
+                kind: kind, handle: handle(for: window.id),
                 app: window.appName, title: window.title, space: space
             ))
         }
@@ -121,12 +136,13 @@ extension Engine {
     func forgetSoftDriftIfWorldChanged(displays: [WindowSystemDisplay], windows: [WindowSystemWindow]) {
         guard let softDriftWorld, softDriftWorld != WorldSnapshot(displays: displays, windows: windows) else { return }
         failedMoves = []
+        failedFrames = []
         self.softDriftWorld = nil
     }
 
     /// Called after Restore, so the Soft Drift it recorded holds until the world moves on.
     func rememberWorldForSoftDrift() {
-        guard !failedMoves.isEmpty else { softDriftWorld = nil; return }
+        guard !failedMoves.isEmpty || !failedFrames.isEmpty else { softDriftWorld = nil; return }
         softDriftWorld = WorldSnapshot(
             displays: windowSystem.readDisplays(), windows: windowSystem.readWindows().filter(\.isStandard)
         )

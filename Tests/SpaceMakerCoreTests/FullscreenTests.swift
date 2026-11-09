@@ -27,6 +27,7 @@ struct FullscreenTests {
 
     @Test func saveRecordsFullscreenWindowsInterleavedWithSpacesInOnScreenOrder() throws {
         laptopAlone()
+        world.place(601, at: WindowFrame(x: 0, y: 0, width: 1512, height: 982))
         try engine().run("save")
 
         let layout = try savedLayout()
@@ -35,6 +36,7 @@ struct FullscreenTests {
         #expect(layout.spaces == ["TickTick", "Google Chrome", "Google Chrome 2"])
         let fullscreen = layout.assignments.filter(\.window.isFullscreen).map { "\($0.window.chromeProfile ?? "") → \($0.space)" }
         #expect(fullscreen.sorted() == ["Game → Game fullscreen", "Work → Work fullscreen"])
+        #expect(layout.assignments.filter(\.window.isFullscreen).allSatisfy { $0.frames.isEmpty })  // fullscreen fills the display
     }
 
     @Test func restorePutsAWindowTakenOutOfFullscreenBackInItsPlace() throws {

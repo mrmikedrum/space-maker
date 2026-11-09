@@ -12,7 +12,17 @@ final class FakeWindowSystem: WindowSystem {
 
     enum MirrorState: Equatable { case shown, hidden }
 
-    func readDisplays() -> [WindowSystemDisplay] { displays }
+    /// Reads still to come while macOS is rearranging desktops after a reconfiguration. Each one sees
+    /// a different half-finished set of desktops, and macOS refuses moves meanwhile.
+    var unsettledReads = 0
+
+    func readDisplays() -> [WindowSystemDisplay] {
+        guard unsettledReads > 0, !displays.isEmpty else { return displays }
+        unsettledReads -= 1
+        var halfway = displays
+        halfway[0].desktops.append(.regular(9000 + UInt64(unsettledReads)))
+        return halfway
+    }
     func readWindows() -> [WindowSystemWindow] { windows }
     func readFrontmostWindow() -> UInt32? { frontmostWindow }
 
@@ -44,6 +54,18 @@ final class FakeWindowSystem: WindowSystem {
 
     var onEvent: (@MainActor (WindowSystemEvent) -> Void)?
 
+    /// Time in the fake world. It only moves when a test advances it; tests never sleep.
+    let clock = FakeClock()
+
+    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) {
+        clock.schedule(after: delay, action)
+    }
+
+    /// macOS reports that displays were reconfigured (connected, disconnected or rearranged).
+    func reconfigureDisplays() {
+        onEvent?(.displaysReconfigured)
+    }
+
     /// The user switches desktops, as with Ctrl-arrow: the display showing `desktop` now shows it.
     func switchTo(desktop: UInt64) {
         for index in displays.indices where displays[index].desktops.contains(where: { $0.id == desktop }) {
@@ -62,7 +84,7 @@ final class FakeWindowSystem: WindowSystem {
     var unmovableWindows: Set<UInt32> = []
 
     func moveWindow(_ windowID: UInt32, toDesktop desktopID: UInt64) -> Bool {
-        guard !unmovableWindows.contains(windowID),
+        guard unsettledReads == 0, !unmovableWindows.contains(windowID),
               displays.contains(where: { $0.desktops.contains { $0.id == desktopID } })
         else { return false }
         move(windowID, to: desktopID)
@@ -150,6 +172,21 @@ final class FakeWindowSystem: WindowSystem {
         }
     }
 
+    /// Windows macOS won't resize or reposition.
+    var unresizableWindows: Set<UInt32> = []
+
+    /// The user drags or resizes a window by hand.
+    func place(_ windowID: UInt32, at frame: WindowFrame) {
+        guard let index = windows.firstIndex(where: { $0.id == windowID }) else { return }
+        windows[index].frame = frame
+    }
+
+    func setFrame(_ windowID: UInt32, to frame: WindowFrame) -> Bool {
+        guard !unresizableWindows.contains(windowID), let index = windows.firstIndex(where: { $0.id == windowID }) else { return false }
+        windows[index].frame = frame
+        return true
+    }
+
     func desktop(of windowID: UInt32) -> UInt64? {
         windows.first { $0.id == windowID }?.desktopID
     }
@@ -172,24 +209,44 @@ final class FakeWindowSystem: WindowSystem {
         return .named
     }
 
-    /// Quits and relaunches Chrome as macOS 15 does: session restore brings every window back,
+    /// Quits and relaunches Chrome as macOS 15 does: session restore brings every window back one at a time,
     /// names included, with fresh window IDs (`id + offset`) and every normal window on the current desktop.
+    /// Each window announces itself as it appears.
     func relaunchChrome(idOffset: UInt32 = 1000) {
         let current = displays.flatMap(\.desktops).first(where: \.isCurrent)?.id
-        for index in windows.indices where windows[index].chromeProfile != .notChrome {
-            windows[index].id += idOffset
-            if !windows[index].isFullscreen { windows[index].desktopID = current }
+        let chrome = windows.filter { $0.chromeProfile != .notChrome }
+        windows.removeAll { $0.chromeProfile != .notChrome }
+        for var window in chrome {
+            window.id += idOffset
+            if !window.isFullscreen { window.desktopID = current }
+            openWindow(window)
         }
+    }
+
+    /// A window appears, as when the user opens one or an app launches.
+    func openWindow(_ window: WindowSystemWindow) {
+        windows.append(window)
+        onEvent?(.windowAppeared(window.id))
+    }
+
+    /// macOS reports a window it already reported as appearing again, as when its app is unhidden.
+    func announceAgain(_ windowID: UInt32) {
+        onEvent?(.windowAppeared(windowID))
     }
 }
 
 extension WindowSystemDisplay {
-    static func builtIn(desktops: [WindowSystemDesktop]) -> Self {
-        Self(id: "built-in", name: "Built-in Retina Display", isBuiltIn: true, desktops: desktops)
+    /// A 1512×982 laptop screen with a 25-point menu bar and the Dock hidden.
+    static func builtIn(desktops: [WindowSystemDesktop], visibleFrame: WindowFrame = WindowFrame(x: 0, y: 25, width: 1512, height: 957)) -> Self {
+        Self(id: "built-in", name: "Built-in Retina Display", isBuiltIn: true, desktops: desktops, visibleFrame: visibleFrame)
     }
 
-    static func external(_ id: String, hardwareID: String? = nil, name: String, desktops: [WindowSystemDesktop]) -> Self {
-        Self(id: id, hardwareID: hardwareID, name: name, isBuiltIn: false, desktops: desktops)
+    /// By default a 2560×1440 monitor to the right of the laptop.
+    static func external(
+        _ id: String, hardwareID: String? = nil, name: String, desktops: [WindowSystemDesktop],
+        visibleFrame: WindowFrame = WindowFrame(x: 1512, y: 25, width: 2560, height: 1415)
+    ) -> Self {
+        Self(id: id, hardwareID: hardwareID, name: name, isBuiltIn: false, desktops: desktops, visibleFrame: visibleFrame)
     }
 }
 
@@ -209,11 +266,12 @@ extension WindowSystemWindow {
         fullscreen: Bool = false,
         chromeProfile: ChromeProfile = .notChrome,
         isStandard: Bool = true,
-        name: String? = nil
+        name: String? = nil,
+        frame: WindowFrame? = nil
     ) -> Self {
         Self(
             id: id, bundleID: bundleID, appName: appName, title: name ?? title, desktopID: desktop,
-            isFullscreen: fullscreen, chromeProfile: chromeProfile, isStandard: isStandard, name: name
+            isFullscreen: fullscreen, chromeProfile: chromeProfile, isStandard: isStandard, name: name, frame: frame
         )
     }
 
@@ -228,5 +286,29 @@ extension URL {
     /// A Layout file location of its own, so tests never touch the user's real Layout.
     static func temporaryLayout() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("space-maker-tests-\(UUID().uuidString)/layout.json")
+    }
+}
+
+/// A clock that runs scheduled work only when a test advances it.
+@MainActor
+final class FakeClock {
+    private(set) var now: TimeInterval = 0
+    private var pending: [(at: TimeInterval, order: Int, action: @MainActor () -> Void)] = []
+    private var lastOrder = 0
+
+    func schedule(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) {
+        lastOrder += 1
+        pending.append((now + max(0, delay), lastOrder, action))
+    }
+
+    /// Moves time forward, running everything that falls due, in order, including work scheduled meanwhile.
+    func advance(by interval: TimeInterval) {
+        let end = now + interval
+        while let next = pending.filter({ $0.at <= end }).min(by: { ($0.at, $0.order) < ($1.at, $1.order) }) {
+            pending.removeAll { $0.order == next.order }
+            now = next.at
+            next.action()
+        }
+        now = end
     }
 }
